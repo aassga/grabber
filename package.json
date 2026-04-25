@@ -1,0 +1,14 @@
+{
+  "name": "grabber",
+  "version": "1.0.0",
+  "description": "票務搶票系統 - Ticket Grabbing System",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "db:init": "node src/db/migrate.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "mysql2": "^3.9.7"
+  }
+}
