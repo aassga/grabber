@@ -1,5 +1,0 @@
-2026/04/26-13:30:38.368 c34 Reusing MANIFEST C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_4daea122b5685b4e48a.kktix.cc_0.indexeddb.leveldb/MANIFEST-000001
-2026/04/26-13:30:38.369 c34 Recovering log #18
-2026/04/26-13:30:38.369 c34 Reusing old log C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_4daea122b5685b4e48a.kktix.cc_0.indexeddb.leveldb/000018.log 
-2026/04/26-13:30:38.370 c34 Delete type=2 #16
-2026/04/26-13:30:38.762 6cc4 Manual compaction at level-0 from '\x00\x06\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x07\x00\x00\x00' @ 0 : 0; will stop at (end)
