@@ -1,0 +1,13 @@
+2026/04/26-21:50:22.176 31bc Reusing MANIFEST C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_4daea122b5685b4e48a.kktix.cc_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/26-21:50:22.177 31bc Recovering log #18
+2026/04/26-21:50:22.177 31bc Reusing old log C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_4daea122b5685b4e48a.kktix.cc_0.indexeddb.leveldb/000018.log 
+2026/04/26-21:50:23.754 5c6c Level-0 table #23: started
+2026/04/26-21:50:23.756 5c6c Level-0 table #23: 839 bytes OK
+2026/04/26-21:50:23.757 5c6c Delete type=0 #18
+2026/04/26-21:50:23.758 5fc0 Manual compaction at level-0 from '\x00\x07\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x08\x00\x00\x00' @ 0 : 0; will stop at '\x00\x07\x00\x00\x05' @ 121 : 1
+2026/04/26-21:50:23.758 5fc0 Compacting 1@0 + 1@1 files
+2026/04/26-21:50:23.761 5fc0 Generated table #24@0: 12 keys, 739 bytes
+2026/04/26-21:50:23.761 5fc0 Compacted 1@0 + 1@1 files => 739 bytes
+2026/04/26-21:50:23.762 5fc0 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/04/26-21:50:23.762 5fc0 Delete type=2 #23
+2026/04/26-21:50:23.763 5fc0 Manual compaction at level-0 from '\x00\x07\x00\x00\x05' @ 121 : 1 .. '\x00\x08\x00\x00\x00' @ 0 : 0; will stop at (end)

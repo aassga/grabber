@@ -1,0 +1,5 @@
+2026/04/26-23:53:27.930 33c4 Reusing MANIFEST C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_kktix.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/26-23:53:27.931 33c4 Recovering log #306
+2026/04/26-23:53:27.932 33c4 Reusing old log C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_kktix.com_0.indexeddb.leveldb/000306.log 
+2026/04/26-23:53:27.932 33c4 Delete type=2 #304
+2026/04/26-23:53:28.663 33c4 Manual compaction at level-0 from '\x00{\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00|\x00\x00\x00' @ 0 : 0; will stop at (end)

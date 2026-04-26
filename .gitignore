@@ -2,6 +2,13 @@
 node_modules
 /dist
 
+# Chrome 使用者資料（含 cookies/session，敏感且體積大）
+.chrome-profile/
+.chrome-profile-scraper/
+
+# 除錯截圖
+debug.png
+
 
 # local env files
 .env.local

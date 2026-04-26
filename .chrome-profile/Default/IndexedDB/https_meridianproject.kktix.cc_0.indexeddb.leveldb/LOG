@@ -1,0 +1,6 @@
+2026/04/26-21:53:18.374 31bc Creating DB C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_meridianproject.kktix.cc_0.indexeddb.leveldb since it was missing.
+2026/04/26-21:53:18.378 31bc Reusing MANIFEST C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_meridianproject.kktix.cc_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/26-21:53:25.314 5c6c Level-0 table #5: started
+2026/04/26-21:53:25.316 5c6c Level-0 table #5: 598 bytes OK
+2026/04/26-21:53:25.318 5c6c Delete type=0 #3
+2026/04/26-21:53:25.319 5fc0 Manual compaction at level-0 from '\x00\x01\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00\x02\x00\x00\x00' @ 0 : 0; will stop at (end)

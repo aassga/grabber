@@ -1,0 +1,14 @@
+2026/04/26-23:53:25.084 33c4 Reusing MANIFEST C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_kktix.com_0.indexeddb.leveldb/MANIFEST-000001
+2026/04/26-23:53:25.086 33c4 Recovering log #302
+2026/04/26-23:53:25.086 33c4 Reusing old log C:\Users\micha\OneDrive\文件\grabber\.chrome-profile\Default\IndexedDB\https_kktix.com_0.indexeddb.leveldb/000302.log 
+2026/04/26-23:53:25.087 33c4 Delete type=2 #300
+2026/04/26-23:53:25.785 5188 Level-0 table #307: started
+2026/04/26-23:53:25.789 5188 Level-0 table #307: 559 bytes OK
+2026/04/26-23:53:25.790 5188 Delete type=0 #302
+2026/04/26-23:53:25.791 5188 Manual compaction at level-0 from '\x00z\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00{\x00\x00\x00' @ 0 : 0; will stop at '\x00z\x00\x00\x05' @ 2306 : 1
+2026/04/26-23:53:25.792 5188 Compacting 1@0 + 1@1 files
+2026/04/26-23:53:25.794 5188 Generated table #308@0: 138 keys, 3798 bytes
+2026/04/26-23:53:25.794 5188 Compacted 1@0 + 1@1 files => 3798 bytes
+2026/04/26-23:53:25.795 5188 compacted to: files[ 0 1 1 0 0 0 0 ]
+2026/04/26-23:53:25.795 5188 Delete type=2 #307
+2026/04/26-23:53:25.797 5188 Manual compaction at level-0 from '\x00z\x00\x00\x05' @ 2306 : 1 .. '\x00{\x00\x00\x00' @ 0 : 0; will stop at (end)
