@@ -8,15 +8,21 @@ const SELECTORS = {
     submit: 'input[type="submit"], button[type="submit"]',
     error: '.alert-danger, .error-message',
   },
+  // Cloudflare 驗證
+  cloudflare: {
+    challenge: '#challenge-form, #challenge-running, #challenge-stage, .cf-browser-verification, #cf-please-wait',
+    turnstile: 'iframe[src*="challenges.cloudflare.com"]',
+  },
   // 活動頁 - 票券區
   event: {
-    registerBtn: 'a.register-btn, a[href*="registrations/new"], .ticket-apply-btn',
+    registerBtn: 'a.register-btn, a[href*="registrations/new"], .ticket-apply-btn, button.register-btn',
     soldOut: '.sold-out, .ticket-sold-out',
     notYet: '.not-yet, .coming-soon',
-    ticketRows: '.ticket-row, .ticket-type-row, tr.ticket',
-    ticketName: '.ticket-name, td.name',
+    ticketRows: '.ticket-row, .ticket-type-row, tr.ticket, tbody tr',
+    ticketName: '.ticket-name, td.name, td:first-child',
     ticketQtySelect: 'select.ticket-count, select[name*="qty"], select[name*="count"]',
     applyBtn: 'input[type="submit"].apply, button.apply-btn, #register-submit',
+    nextBtn: 'button, input[type="submit"]',
   },
   // 報名表單
   form: {
@@ -42,6 +48,39 @@ const SELECTORS = {
     image: 'img.captcha-image, .captcha img',
     input: 'input#captcha, input[name="captcha"]',
   },
+}
+
+// 等待 Cloudflare 驗證通過（自動輪詢直到 challenge 消失）
+async function waitForCloudflare(page, log, timeout = 30000) {
+  const start = Date.now()
+  while (Date.now() - start < timeout) {
+    const isChallenge = await page.evaluate((sel) => {
+      return !!(
+        document.querySelector(sel) ||
+        document.title.includes('Just a moment') ||
+        document.title.includes('正在執行安全驗證') ||
+        document.title.includes('Attention Required')
+      )
+    }, SELECTORS.cloudflare.challenge).catch(() => false)
+
+    if (!isChallenge) return true
+    if (log) log('等待 Cloudflare 安全驗證...', 'info')
+    await new Promise(r => setTimeout(r, 1500))
+  }
+  return false
+}
+
+// 用文字內容找可點擊的按鈕（比 XPath 更可靠，避免回傳文字節點）
+async function findButtonByText(page, texts) {
+  const textList = Array.isArray(texts) ? texts : [texts]
+  const handle = await page.evaluateHandle((list) => {
+    const candidates = [...document.querySelectorAll('button, input[type="submit"], a')]
+    return candidates.find(el => {
+      const t = (el.innerText || el.value || el.textContent || '').trim()
+      return list.some(kw => t.includes(kw))
+    }) || null
+  }, textList)
+  return handle.asElement() || null
 }
 
 // 等待元素出現（含 timeout）
@@ -71,11 +110,22 @@ async function safeType(page, selector, text, clear = true) {
 
 // 登入 KKTIX
 async function login(page, email, password, log) {
+  const LOGIN_URL = 'https://kktix.com/users/sign_in'
   log('前往 KKTIX 登入頁...', 'info')
-  await page.goto('https://kktix.com/users/sign_in', { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
+
+  // 等待 Cloudflare 驗證通過
+  const cfQuick = await waitForCloudflare(page, log, 10000)
+  if (!cfQuick) {
+    log('⚠️ 出現 Cloudflare 驗證，請在瀏覽器中完成後系統將自動繼續...', 'warn')
+    await waitForCloudflare(page, null, 120000)
+    // Cloudflare 通過後重新載入，確保取得新的 CSRF token（避免 422 表單過期）
+    log('重新載入登入頁以取得新的驗證資訊...', 'info')
+    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  }
 
   // 等待頁面穩定
-  await page.waitForTimeout(1500)
+  await page.waitForTimeout(800)
 
   // 嘗試多組 email selector
   const emailSelectors = [
@@ -130,14 +180,31 @@ async function login(page, email, password, log) {
 
   await safeClick(page, submitSel)
 
-  // 等待跳轉或錯誤
+  // 等待跳轉（送出後可能觸發 Cloudflare 對 POST 請求的驗證）
   await page.waitForNavigation({ timeout: 15000 }).catch(() => {})
+
+  // 送出後再次檢查 Cloudflare（POST 請求也會被攔截）
+  const cfAfterSubmit = await waitForCloudflare(page, log, 8000)
+  if (!cfAfterSubmit) {
+    log('⚠️ 登入送出後出現 Cloudflare 驗證，請在瀏覽器完成後系統自動繼續...', 'warn')
+    const cfPassed = await waitForCloudflare(page, null, 120000)
+    if (!cfPassed) throw new Error('登入時 Cloudflare 驗證逾時，請重試')
+    // Cloudflare 通過後可能需要等待頁面跳轉完成
+    await page.waitForNavigation({ timeout: 10000 }).catch(() => {})
+  }
 
   const url = page.url()
   if (url.includes('sign_in')) {
+    // 確認是否真的還在登入頁（排除 Cloudflare 干擾）
     const errEl = await page.$(SELECTORS.login.error)
-    const errTxt = errEl ? await errEl.evaluate(el => el.innerText.trim()) : '帳號或密碼錯誤，請確認帳號管理頁填寫的資料'
-    throw new Error(`登入失敗：${errTxt}`)
+    if (errEl) {
+      const errTxt = await errEl.evaluate(el => el.innerText.trim())
+      throw new Error(`登入失敗：${errTxt}`)
+    }
+    // 若沒有錯誤訊息元素，可能是 Cloudflare 仍在驗證中
+    const stillCf = await waitForCloudflare(page, log, 30000)
+    if (!stillCf) throw new Error('登入被 Cloudflare 阻擋，請手動完成驗證後重試')
+    throw new Error('登入後仍停留在登入頁，請確認帳號密碼是否正確')
   }
   log('登入成功', 'success')
 }
@@ -145,7 +212,12 @@ async function login(page, email, password, log) {
 // 前往活動頁並監控票券狀態
 async function gotoEvent(page, url, log) {
   log(`前往活動頁：${url}`, 'info')
-  await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 })
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+  // 等待頁面 JS 執行完畢（活動頁有動態內容）
+  await new Promise(r => setTimeout(r, 2000))
+  const actualUrl = page.url()
+  if (actualUrl !== url) log(`實際落地頁：${actualUrl}`, 'info')
+  await waitForCloudflare(page, log, 20000)
 }
 
 // 檢查票券是否可搶（回傳 'available' | 'sold_out' | 'not_yet'）
@@ -158,7 +230,6 @@ async function checkTicketStatus(page, ticketType) {
     const name = await nameEl.evaluate(el => el.innerText.trim())
     if (ticketType && !name.includes(ticketType)) continue
 
-    // 判斷狀態
     const soldOut = await row.$('.sold-out, .ticket-sold-out, button[disabled]')
     if (soldOut) return 'sold_out'
 
@@ -168,24 +239,38 @@ async function checkTicketStatus(page, ticketType) {
     return 'available'
   }
 
-  // fallback: 直接找報名按鈕
+  // fallback 1: 找已知報名按鈕 selector
   const regBtn = await page.$(SELECTORS.event.registerBtn)
   if (regBtn) {
     const disabled = await regBtn.evaluate(el => el.disabled || el.classList.contains('disabled'))
-    if (disabled) return 'not_yet'
-    return 'available'
+    return disabled ? 'not_yet' : 'available'
+  }
+
+  // fallback 2: 找文字為「下一步」「立即報名」「報名」「購票」的按鈕
+  const ctaBtn = await findButtonByText(page, ['下一步', '立即報名', '報名', '購票', 'Register', 'Next'])
+  if (ctaBtn) {
+    const disabled = await ctaBtn.evaluate(el => el.disabled || el.classList.contains('disabled') || el.hasAttribute('disabled'))
+    return disabled ? 'not_yet' : 'available'
   }
 
   return 'not_yet'
 }
 
-// 選票 + 設定數量 + 點報名
+// 共用：用 JS DOM click()，完全不受 viewport/遮擋限制
+async function jsClick(el) {
+  await el.evaluate(node => {
+    node.scrollIntoView({ block: 'center', inline: 'nearest' })
+    node.click()
+  })
+}
+
+// 選票 + 設定數量 + 勾選同意 + 點下一步
 async function selectTicket(page, ticketType, quantity, log) {
   log(`選取票種「${ticketType || '第一個可用票種'}」...`, 'info')
 
+  // ── 步驟 1：找目標票種 row ────────────────────────────────
   const rows = await page.$$(SELECTORS.event.ticketRows)
   let targetRow = null
-
   for (const row of rows) {
     if (!ticketType) { targetRow = row; break }
     const nameEl = await row.$(SELECTORS.event.ticketName)
@@ -194,17 +279,83 @@ async function selectTicket(page, ticketType, quantity, log) {
     if (name.includes(ticketType)) { targetRow = row; break }
   }
 
+  // ── 步驟 2：設定數量 ─────────────────────────────────────
   if (targetRow) {
-    // 設定數量
-    const qtySelect = await targetRow.$(SELECTORS.event.ticketQtySelect)
+    // 優先嘗試 <select> 下拉選單（舊版活動頁）
+    const qtySelect = await targetRow.$(SELECTORS.event.ticketQtySelect).catch(() => null)
     if (qtySelect) {
       await qtySelect.select(String(quantity))
-      log(`數量設定為 ${quantity} 張`, 'info')
+      log(`數量設定為 ${quantity} 張（下拉選單）`, 'info')
+    } else {
+      // 新版活動頁：+/- 按鈕，先重置為 0 再點 + quantity 次
+      const plusBtn = await targetRow.evaluateHandle(row => {
+        const btns = [...row.querySelectorAll('button')]
+        return btns.find(b => b.textContent.trim() === '+') || null
+      }).then(h => h.asElement()).catch(() => null)
+
+      const minusBtn = await targetRow.evaluateHandle(row => {
+        const btns = [...row.querySelectorAll('button')]
+        return btns.find(b => b.textContent.trim() === '-') || null
+      }).then(h => h.asElement()).catch(() => null)
+
+      if (plusBtn) {
+        // 先把數量歸零
+        if (minusBtn) {
+          for (let i = 0; i < 10; i++) {
+            const current = await targetRow.evaluate(row => {
+              const numEl = row.querySelector('input[type="number"], .quantity, .qty, td:last-child span')
+              return numEl ? parseInt(numEl.value || numEl.textContent || '0', 10) : 0
+            })
+            if (current <= 0) break
+            await jsClick(minusBtn)
+            await new Promise(r => setTimeout(r, 100))
+          }
+        }
+        // 再按 + quantity 次
+        for (let i = 0; i < quantity; i++) {
+          await jsClick(plusBtn)
+          await new Promise(r => setTimeout(r, 150))
+        }
+        log(`數量設定為 ${quantity} 張（+按鈕）`, 'info')
+      } else {
+        log('找不到數量選擇器，以預設數量繼續', 'warn')
+      }
     }
   }
 
-  // 點擊報名按鈕
-  await safeClick(page, SELECTORS.event.registerBtn)
+  // ── 步驟 3：勾選同意條款 checkbox ────────────────────────
+  const agreeCheckboxes = await page.$$('input[type="checkbox"]')
+  for (const cb of agreeCheckboxes) {
+    const checked = await cb.evaluate(el => el.checked)
+    if (!checked) {
+      await jsClick(cb)
+      log('已勾選同意條款', 'info')
+      await new Promise(r => setTimeout(r, 200))
+    }
+  }
+
+  // ── 步驟 4：點擊「下一步」或報名按鈕 ─────────────────────
+  let clicked = false
+
+  const regBtn = await page.$(SELECTORS.event.registerBtn).catch(() => null)
+  if (regBtn) {
+    await jsClick(regBtn)
+    clicked = true
+    log('點擊報名按鈕', 'info')
+  }
+
+  if (!clicked) {
+    const ctaBtn = await findButtonByText(page, ['下一步', '立即報名', '報名', '購票', 'Register', 'Next'])
+    if (ctaBtn) {
+      const text = await ctaBtn.evaluate(el => (el.innerText || el.value || '').trim())
+      await jsClick(ctaBtn)
+      clicked = true
+      log(`點擊「${text}」按鈕`, 'info')
+    }
+  }
+
+  if (!clicked) throw new Error('找不到前進按鈕（下一步/報名），頁面結構可能已變更')
+
   await page.waitForNavigation({ timeout: 15000 }).catch(() => {})
   log('已進入報名頁面', 'info')
 }
@@ -297,11 +448,13 @@ async function fillPayment(page, paymentData, log) {
   await page.waitForNavigation({ timeout: 30000 }).catch(() => {})
 }
 
-// 偵測驗證碼
+// 偵測驗證碼（含 Cloudflare Turnstile）
 async function hasCaptcha(page) {
   const captchaFrame = await page.$(SELECTORS.captcha.iframe)
   const captchaImg = await page.$(SELECTORS.captcha.image)
-  return !!(captchaFrame || captchaImg)
+  const cfChallenge = await page.$(SELECTORS.cloudflare.challenge)
+  const cfTurnstile = await page.$(SELECTORS.cloudflare.turnstile)
+  return !!(captchaFrame || captchaImg || cfChallenge || cfTurnstile)
 }
 
 // 偵測是否成功
@@ -322,4 +475,5 @@ module.exports = {
   hasCaptcha,
   isOrderSuccess,
   waitForAny,
+  waitForCloudflare,
 }

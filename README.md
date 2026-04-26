@@ -18,6 +18,10 @@
 | 排程搶票 | 預設多筆活動，倒數到開賣時間自動觸發 |
 | 即時監控 | WebSocket 即時串流執行日誌、狀態、嘗試次數 |
 | 反偵測 | 使用 Puppeteer Stealth Plugin 隱藏自動化特徵 |
+| **活動瀏覽** | **從 KKTIX 探索頁自動抓取活動列表，卡片橫式排列，含搜尋與直接選取** |
+| **設定下拉選單** | **設定頁可從下拉選單選擇活動，自動帶入活動網址，日期以金黃色標籤標示** |
+| **資料持久化** | **設定、帳號、排程以 localStorage 保存，重整後不需重填** |
+| **Cloudflare 繞過** | **使用系統 Chrome 執行、反偵測腳本注入、登入流程強化（含 422 修復）** |
 
 ---
 
@@ -27,16 +31,18 @@
 grabber/
 ├── server/              # Node.js 後端
 │   ├── index.js         # Express + WebSocket 伺服器（port 3000）
-│   ├── grabber.js       # 搶票主控邏輯
-│   └── kktix.js         # KKTIX 頁面操作（selector、登入、表單、付款）
+│   ├── grabber.js       # 搶票主控邏輯（含反偵測、Cloudflare 處理）
+│   ├── kktix.js         # KKTIX 頁面操作（selector、登入、表單、付款）
+│   └── events.js        # KKTIX 活動爬蟲（含 5 分鐘快取）
 └── src/                 # Vue 3 前端
     ├── views/
-    │   ├── SettingsView.vue    # 設定頁
+    │   ├── EventsView.vue      # 活動瀏覽頁（新增）
+    │   ├── SettingsView.vue    # 設定頁（含活動下拉選單）
     │   ├── AccountsView.vue    # 帳號管理頁
     │   ├── MonitorView.vue     # 監控頁
     │   └── ScheduleView.vue    # 排程頁
     ├── store/
-    │   └── grabberStore.js     # 全域狀態（Vue reactive）
+    │   └── grabberStore.js     # 全域狀態（Vue reactive + localStorage 持久化）
     └── services/
         └── socket.js           # WebSocket + REST API 封裝
 ```
@@ -94,6 +100,19 @@ npm run build
 ---
 
 ## 使用說明
+
+### 步驟零：活動瀏覽（可選）
+
+前往「**活動瀏覽**」頁面，可直接從 KKTIX 上瀏覽所有目前開放的活動：
+
+1. 點擊「**立即載入**」，系統以 headless 瀏覽器抓取 KKTIX 探索頁（首次約 15–20 秒，後續 5 分鐘快取）
+2. 活動以卡片方式橫式排列，顯示封面圖、名稱、日期
+3. 在搜尋欄輸入關鍵字可即時過濾活動名稱
+4. 點擊「**選擇此活動**」，系統自動將網址填入「設定」頁並跳轉
+
+> 過期活動（今年以前）與已結束活動不會顯示。
+
+---
 
 ### 步驟一：設定帳號
 

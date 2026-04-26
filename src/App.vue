@@ -6,6 +6,9 @@
         <span class="brand-name">KKTIX 搶票工具</span>
       </div>
       <div class="nav-links">
+        <router-link to="/events" class="nav-item">
+          <span class="nav-icon">🎪</span>活動瀏覽
+        </router-link>
         <router-link to="/schedule" class="nav-item">
           <span class="nav-icon">📅</span>排程搶票
           <span v-if="waitingCount > 0" class="nav-badge">{{ waitingCount }}</span>

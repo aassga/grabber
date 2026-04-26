@@ -3,6 +3,7 @@ const cors = require('cors')
 const http = require('http')
 const { WebSocketServer } = require('ws')
 const Grabber = require('./grabber')
+const { fetchEvents } = require('./events')
 
 const app = express()
 app.use(cors())
@@ -101,8 +102,21 @@ app.post('/api/captcha-resolved', (req, res) => {
 })
 
 // 健康檢查
-app.get('/api/health', (req, res) => {
+app.get('/api/health', (_req, res) => {
   res.json({ ok: true, running: !!(activeGrabber?.running) })
+})
+
+// 活動列表（爬取 KKTIX explore 頁，含快取）
+app.get('/api/events', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')  // 禁止瀏覽器/Express 快取，避免 304
+  try {
+    const q = (req.query.q || '').trim()
+    const events = await fetchEvents(q)
+    res.json({ ok: true, events })
+  } catch (err) {
+    console.error('[Events]', err.message)
+    res.status(500).json({ ok: false, error: err.message, events: [] })
+  }
 })
 
 // ─── 啟動 ─────────────────────────────────────────────────────
