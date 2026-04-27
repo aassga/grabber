@@ -5,7 +5,11 @@
         <span class="brand-icon">🎫</span>
         <span class="brand-name">KKTIX 搶票工具</span>
       </div>
-      <div class="nav-links">
+      <!-- 漢堡按鈕（手機版） -->
+      <button class="hamburger" @click="menuOpen = !menuOpen" :class="{ open: menuOpen }">
+        <span></span><span></span><span></span>
+      </button>
+      <div class="nav-links" :class="{ 'menu-open': menuOpen }" @click="menuOpen = false">
         <router-link to="/events" class="nav-item">
           <span class="nav-icon">🎪</span>活動瀏覽
         </router-link>
@@ -37,7 +41,7 @@ import socketService from './services/socket'
 export default {
   name: 'App',
   data() {
-    return { scheduleTimer: null }
+    return { scheduleTimer: null, menuOpen: false }
   },
   computed: {
     waitingCount() {
@@ -142,6 +146,61 @@ body {
 
 .main-content { flex: 1; padding: 24px; max-width: 1100px; margin: 0 auto; width: 100%; }
 
+/* ── 漢堡按鈕 ── */
+.hamburger {
+  display: none;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 28px;
+  height: 20px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  margin-left: auto;
+}
+.hamburger span {
+  display: block;
+  height: 2px;
+  background: #94a3b8;
+  border-radius: 2px;
+  transition: all 0.3s;
+}
+.hamburger.open span:nth-child(1) { transform: translateY(9px) rotate(45deg); }
+.hamburger.open span:nth-child(2) { opacity: 0; }
+.hamburger.open span:nth-child(3) { transform: translateY(-9px) rotate(-45deg); }
+
+/* ── RWD 斷點 ── */
+@media (max-width: 768px) {
+  .navbar { padding: 0 16px; height: 56px; position: relative; }
+  .hamburger { display: flex; }
+  .nav-brand { flex: 1; }
+  .brand-name { font-size: 15px; }
+
+  .nav-links {
+    display: none;
+    position: absolute;
+    top: 56px;
+    left: 0;
+    right: 0;
+    background: #1a1d2e;
+    border-bottom: 1px solid #2d3561;
+    flex-direction: column;
+    padding: 8px 12px 16px;
+    gap: 4px;
+    z-index: 99;
+  }
+  .nav-links.menu-open { display: flex; }
+  .nav-item { padding: 12px 16px; font-size: 15px; border-radius: 8px; }
+
+  .main-content { padding: 16px 12px; }
+}
+
+@media (max-width: 480px) {
+  .brand-name { display: none; }
+  .main-content { padding: 12px 8px; }
+}
+
 .card {
   background: #1a1d2e;
   border: 1px solid #2d3561;
@@ -245,4 +304,11 @@ body {
 }
 .btn-outline:hover { border-color: #7c6aff; color: #7c6aff; }
 .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+@media (max-width: 768px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .card { padding: 16px; }
+  .card-title { font-size: 14px; }
+  .btn { font-size: 13px; }
+}
 </style>

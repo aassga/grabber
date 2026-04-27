@@ -220,4 +220,21 @@ export default {
 }
 .stat-num { font-size: 32px; font-weight: 700; color: #7c6aff; }
 .stat-label { font-size: 13px; color: #64748b; margin-top: 4px; }
+
+@media (max-width: 768px) {
+  .strategy-grid { grid-template-columns: repeat(2, 1fr); }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+
+  .account-row { flex-wrap: wrap; gap: 12px; }
+  .account-info { width: 100%; }
+  .account-fields { grid-template-columns: 1fr; }
+  .account-actions { flex-direction: row; flex-wrap: wrap; width: 100%; justify-content: flex-start; }
+  .inline-input { max-width: 100%; flex: 1; }
+}
+
+@media (max-width: 480px) {
+  .strategy-grid { grid-template-columns: 1fr 1fr; }
+  .strategy-card { padding: 12px 8px; }
+  .strategy-icon { font-size: 20px; }
+}
 </style>

@@ -383,6 +383,14 @@ export default {
 .req { color: #ef4444; }
 .card-input { letter-spacing: 2px; font-family: monospace; }
 
+@media (max-width: 768px) {
+  .action-bar { flex-wrap: wrap; }
+  .action-bar .btn, .action-bar a { flex: 1; min-width: 0; }
+  .action-bar a .btn { width: 100%; }
+  .schedule-input { max-width: 100%; }
+  .toggle-row { flex-wrap: wrap; gap: 8px; }
+}
+
 /* 自訂活動下拉 */
 .ev-dropdown { position: relative; }
 

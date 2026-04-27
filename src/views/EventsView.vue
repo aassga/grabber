@@ -266,4 +266,15 @@ export default {
   transition: background 0.2s;
 }
 .select-btn:hover { background: #6855e8; }
+
+@media (max-width: 768px) {
+  .search-bar { gap: 8px; }
+  .search-bar .btn { flex-shrink: 0; }
+  .events-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+}
+
+@media (max-width: 480px) {
+  .events-grid { grid-template-columns: 1fr; }
+  .event-title { font-size: 13px; }
+}
 </style>

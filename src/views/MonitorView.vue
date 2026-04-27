@@ -551,12 +551,30 @@ export default {
   color: #f87171;
 }
 
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s;
+.fade-enter-active, .fade-leave-active { transition: opacity 0.3s; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+@media (max-width: 768px) {
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .metric-card { padding: 14px; }
+  .metric-value { font-size: 22px; }
+
+  .captcha-alert { flex-direction: column; text-align: center; gap: 12px; }
+  .captcha-alert .btn { width: 100%; }
+
+  .control-bar { flex-wrap: wrap; }
+  .control-bar .btn-lg { flex: 1; min-width: 0; font-size: 14px; padding: 12px 8px; }
+
+  .target-grid { grid-template-columns: 1fr; }
+
+  .log-entry { flex-wrap: wrap; gap: 6px; font-size: 12px; }
+  .log-time { font-size: 11px; }
+  .log-msg { flex-basis: 100%; }
 }
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+
+@media (max-width: 480px) {
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .metric-value { font-size: 20px; }
+  .log-container { max-height: 300px; }
 }
 </style>

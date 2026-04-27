@@ -423,4 +423,18 @@ export default {
 .slide-enter-active, .slide-leave-active { transition: all 0.25s ease; overflow: hidden; }
 .slide-enter-from, .slide-leave-to { opacity: 0; max-height: 0; }
 .slide-enter-to, .slide-leave-from { opacity: 1; max-height: 600px; }
+
+@media (max-width: 768px) {
+  .stats-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  .stat-card { padding: 14px; }
+  .stat-num { font-size: 24px; }
+
+  .sc-main { flex-direction: column; gap: 12px; }
+  .sc-right { align-items: flex-start; flex-direction: row; flex-wrap: wrap; min-width: 0; width: 100%; }
+  .sc-actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .sc-actions .btn { font-size: 12px; }
+
+  .form-footer { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .form-footer .btn { width: 100%; }
+}
 </style>
