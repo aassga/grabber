@@ -235,11 +235,12 @@ export default {
         const res = await fetch('http://localhost:3000/api/events?q=')
         const data = await res.json()
         if (data.ok) {
-          const thisYear = new Date().getFullYear()
+          const today = new Date(); today.setHours(0, 0, 0, 0)
           this.events = data.events
             .filter(e => {
-              const m = (e.date || '').match(/^(\d{4})/)
-              return m ? parseInt(m[1]) >= thisYear : true
+              const m = (e.date || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/)
+              if (!m) return true
+              return new Date(+m[1], +m[2] - 1, +m[3]) >= today
             })
             .sort((a, b) => {
               const parse = d => {

@@ -107,10 +107,11 @@ export default {
         const res = await fetch(`http://localhost:3000/api/events?q=${encodeURIComponent(this.query)}`)
         const data = await res.json()
         if (!data.ok) throw new Error(data.error || '載入失敗')
-        const thisYear = new Date().getFullYear()
+        const today = new Date(); today.setHours(0, 0, 0, 0)
         this.events = data.events.filter(e => {
-          const m = (e.date || '').match(/^(\d{4})/)
-          return m ? parseInt(m[1]) >= thisYear : true
+          const m = (e.date || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/)
+          if (!m) return true
+          return new Date(+m[1], +m[2] - 1, +m[3]) >= today
         })
         if (this.events.length === 0) this.error = 'KKTIX 目前沒有找到活動，請稍後再試'
       } catch (e) {

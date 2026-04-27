@@ -3,7 +3,7 @@ const cors = require('cors')
 const http = require('http')
 const { WebSocketServer } = require('ws')
 const Grabber = require('./grabber')
-const { fetchEvents } = require('./events')
+const { fetchEvents, fetchTicketTypes } = require('./events')
 
 const app = express()
 app.use(cors())
@@ -104,6 +104,20 @@ app.post('/api/captcha-resolved', (req, res) => {
 // 健康檢查
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, running: !!(activeGrabber?.running) })
+})
+
+// 查詢單一活動的票種清單
+app.get('/api/event-tickets', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  const url = req.query.url
+  if (!url) return res.status(400).json({ ok: false, error: '請提供 url 參數', tickets: [] })
+  try {
+    const tickets = await fetchTicketTypes(url)
+    res.json({ ok: true, tickets })
+  } catch (err) {
+    console.error('[Tickets]', err.message)
+    res.status(500).json({ ok: false, error: err.message, tickets: [] })
+  }
 })
 
 // 活動列表（爬取 KKTIX explore 頁，含快取）

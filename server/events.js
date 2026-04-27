@@ -1,6 +1,7 @@
 const puppeteer = require('puppeteer-extra')
 const StealthPlugin = require('puppeteer-extra-plugin-stealth')
 const path = require('path')
+const os = require('os')
 
 puppeteer.use(StealthPlugin())
 
@@ -61,7 +62,7 @@ async function fetchEvents(query = '') {
   }
 
   const browser = await puppeteer.launch({
-    headless: true,
+    headless: 'new',
     userDataDir: USER_DATA_DIR,
     args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--lang=zh-TW'],
   })
@@ -123,8 +124,18 @@ async function fetchEvents(query = '') {
       if (added === 0) break
     }
 
-    const result = [...allSeen.values()]
-    console.log('[Events] 最終抓到活動數:', result.length)
+    // 過濾掉已過期的活動（日期早於今天）
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    const result = [...allSeen.values()].filter(e => {
+      const m = (e.date || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/)
+      if (!m) return true // 沒有日期就保留
+      const eventDate = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]))
+      return eventDate >= today
+    })
+
+    console.log('[Events] 最終抓到活動數（過濾過期後）:', result.length)
     cache = { data: result, query, at: now }
     return result
   } finally {
@@ -132,4 +143,63 @@ async function fetchEvents(query = '') {
   }
 }
 
-module.exports = { fetchEvents }
+// 爬取指定活動頁面的票種清單
+async function fetchTicketTypes(eventUrl) {
+  // 每次使用獨立的臨時目錄，避免與 fetchEvents 或搶票共用 profile 造成鎖定衝突
+  const tmpProfile = path.join(os.tmpdir(), `kktix-tickets-${Date.now()}`)
+
+  const browser = await puppeteer.launch({
+    headless: 'new',
+    userDataDir: tmpProfile,
+    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--lang=zh-TW'],
+  })
+
+  try {
+    const page = await browser.newPage()
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
+
+    await page.goto(eventUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    // 等待票種表格出現
+    await page.waitForSelector('table, [class*="ticket"], tbody', { timeout: 8000 }).catch(() => {})
+    await new Promise(r => setTimeout(r, 1000))
+
+    const tickets = await page.evaluate(() => {
+      const seen = new Set()
+      const results = []
+
+      // 嘗試找票種行
+      const rows = [...document.querySelectorAll('tbody tr, [class*="ticket-row"], [class*="TicketRow"], [class*="ticket_row"]')]
+
+      for (const row of rows) {
+        // 票種名稱：取第一個 td 或帶 name/title class 的元素
+        const nameEl = row.querySelector('[class*="name"], [class*="title"], td:first-child')
+        if (!nameEl) continue
+        const name = nameEl.innerText.trim().split('\n')[0].trim()
+        if (!name || name.length < 1) continue
+        // 排除表頭文字
+        if (['票種', '名稱', '類型', 'Type', 'Ticket'].includes(name)) continue
+        if (seen.has(name)) continue
+        seen.add(name)
+
+        // 票價
+        const priceEl = row.querySelector('[class*="price"], [class*="fee"], [class*="cost"], td:nth-child(2)')
+        const price = priceEl ? priceEl.innerText.trim().replace(/\s+/g, ' ') : ''
+
+        // 是否售完
+        const rowText = row.innerText || ''
+        const soldOut = !!row.querySelector('[class*="sold"], [class*="disabled"], button[disabled]') ||
+          rowText.includes('已售完') || rowText.includes('Sold Out')
+
+        results.push({ name, price, soldOut })
+      }
+
+      return results
+    })
+
+    return tickets.filter(t => t.name.length > 0)
+  } finally {
+    await browser.close()
+  }
+}
+
+module.exports = { fetchEvents, fetchTicketTypes }

@@ -114,13 +114,29 @@ async function login(page, email, password, log) {
   log('前往 KKTIX 登入頁...', 'info')
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
 
+  // 偵測是否已登入：KKTIX 會直接轉跳回首頁並顯示「你已經登入」
+  const alreadyLoggedIn = await page.evaluate(() => {
+    const url = location.href
+    const bodyText = document.body?.innerText || ''
+    return (
+      !url.includes('sign_in') ||
+      bodyText.includes('你已經登入') ||
+      bodyText.includes('You are already signed in') ||
+      !!document.querySelector('.current-user, [class*="current-user"], .user-nav')
+    )
+  }).catch(() => false)
+
+  if (alreadyLoggedIn) {
+    log('偵測到已登入狀態，跳過登入步驟直接繼續', 'success')
+    return
+  }
+
   // 等待 Cloudflare 驗證通過
   const cfQuick = await waitForCloudflare(page, log, 10000)
   if (!cfQuick) {
-    log('⚠️ 出現 Cloudflare 驗證，請在瀏覽器中完成後系統將自動繼續...', 'warn')
+    log('⚠️ Cloudflare 人機驗證 — 請到瀏覽器視窗，點擊「驗證您是人類」方框，通過後系統自動繼續（最多等 120 秒）', 'warn')
     await waitForCloudflare(page, null, 120000)
-    // Cloudflare 通過後重新載入，確保取得新的 CSRF token（避免 422 表單過期）
-    log('重新載入登入頁以取得新的驗證資訊...', 'info')
+    log('驗證通過，重新載入登入頁...', 'info')
     await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
   }
 
@@ -212,12 +228,27 @@ async function login(page, email, password, log) {
 // 前往活動頁並監控票券狀態
 async function gotoEvent(page, url, log) {
   log(`前往活動頁：${url}`, 'info')
+
+  const targetHostname = new URL(url).hostname  // e.g. myfitness.kktix.cc
+
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
-  // 等 body 出現即可繼續，不固定等待（比 2 秒 sleep 快得多）
-  await page.waitForSelector('body', { timeout: 3000 }).catch(() => {})
+
+  // KKTIX 跨網域 SSO 使用 JS redirect，page.goto 只等到第一頁。
+  // 持續輪詢，直到 URL 落在目標 hostname，或超時 20 秒。
+  const maxWait = 20000
+  const start = Date.now()
+  while (Date.now() - start < maxWait) {
+    const cur = page.url()
+    if (cur.includes(targetHostname)) break
+    await new Promise(r => setTimeout(r, 400))
+  }
+
   const actualUrl = page.url()
-  if (actualUrl !== url) log(`實際落地頁：${actualUrl}`, 'info')
-  // Cloudflare 不在這裡檢查，由 _grabLoop 統一處理，避免重複
+  if (actualUrl.includes(targetHostname)) {
+    log(`已到達活動頁：${actualUrl}`, 'info')
+  } else {
+    log(`⚠️ 落地頁為 ${actualUrl}，不是預期的 ${targetHostname}，可能跨網域驗證未完成`, 'warn')
+  }
 }
 
 // 檢查票券是否可搶（回傳 'available' | 'sold_out' | 'not_yet'）
@@ -347,52 +378,87 @@ async function selectTicket(page, ticketType, quantity, log, customAnswer) {
       await qtySelect.select(String(quantity))
       log(`數量設定為 ${quantity} 張（下拉選單）`, 'info')
     } else {
-      // 新版活動頁：+/- 按鈕，先重置為 0 再點 + quantity 次
-      const plusBtn = await targetRow.evaluateHandle(row => {
-        const btns = [...row.querySelectorAll('button')]
-        return btns.find(b => b.textContent.trim() === '+') || null
-      }).then(h => h.asElement()).catch(() => null)
+      // 新版活動頁：用 page.evaluate 在頁面內直接找並點擊 + 按鈕
+      // 支援 button / span / a / div，比對文字、class、aria-label
+      const clicked = await page.evaluate((ticketName, qty) => {
+        // 找對應票種的行（任意容器）
+        const allEls = [...document.querySelectorAll('tr, [class*="ticket"], [class*="row"]')]
+        const targetEl = allEls.find(el => el.innerText.includes(ticketName)) || document.body
 
-      const minusBtn = await targetRow.evaluateHandle(row => {
-        const btns = [...row.querySelectorAll('button')]
-        return btns.find(b => b.textContent.trim() === '-') || null
-      }).then(h => h.asElement()).catch(() => null)
+        // 在該行找 + 按鈕（廣義搜尋）
+        const candidates = [...targetEl.querySelectorAll('button, a, span, div, [role="button"]')]
+        const plusKeywords  = ['+', '＋', 'add', 'plus', 'increase', 'btn-plus', 'btn-increase', 'quantity-up']
+        const minusKeywords = ['-', '－', 'minus', 'decrease', 'btn-minus', 'btn-decrease', 'quantity-down']
 
-      if (plusBtn) {
-        // 先把數量歸零
+        const isPlusEl = el => {
+          const t = el.textContent.trim()
+          const c = (el.className || '').toLowerCase()
+          const a = (el.getAttribute('aria-label') || '').toLowerCase()
+          return plusKeywords.some(k => t === k || c.includes(k) || a.includes(k))
+        }
+        const isMinusEl = el => {
+          const t = el.textContent.trim()
+          const c = (el.className || '').toLowerCase()
+          const a = (el.getAttribute('aria-label') || '').toLowerCase()
+          return minusKeywords.some(k => t === k || c.includes(k) || a.includes(k))
+        }
+
+        const plusBtn  = candidates.find(isPlusEl)
+        const minusBtn = candidates.find(isMinusEl)
+
+        if (!plusBtn) return false
+
+        // 先歸零
         if (minusBtn) {
           for (let i = 0; i < 10; i++) {
-            const current = await targetRow.evaluate(row => {
-              const numEl = row.querySelector('input[type="number"], .quantity, .qty, td:last-child span')
-              return numEl ? parseInt(numEl.value || numEl.textContent || '0', 10) : 0
-            })
-            if (current <= 0) break
-            await jsClick(minusBtn)
-            await new Promise(r => setTimeout(r, 100))
+            const numEl = targetEl.querySelector('input[type="number"]')
+              || targetEl.querySelector('[class*="count"], [class*="qty"], [class*="quantity"]')
+            const cur = numEl ? parseInt(numEl.value || numEl.textContent || '0', 10) : 0
+            if (cur <= 0) break
+            minusBtn.click()
           }
         }
-        // 再按 + quantity 次
-        for (let i = 0; i < quantity; i++) {
-          await jsClick(plusBtn)
-          await new Promise(r => setTimeout(r, 150))
+
+        // 按 + qty 次
+        for (let i = 0; i < qty; i++) {
+          plusBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
         }
+        return true
+      }, ticketType || '', quantity)
+
+      if (clicked) {
+        await new Promise(r => setTimeout(r, 300))
         log(`數量設定為 ${quantity} 張（+按鈕）`, 'info')
       } else {
-        log('找不到數量選擇器，以預設數量繼續', 'warn')
+        log('⚠️ 找不到 +/- 數量按鈕，請手動確認數量', 'warn')
       }
     }
   }
 
   // ── 步驟 3：勾選同意條款 checkbox ────────────────────────
-  const agreeCheckboxes = await page.$$('input[type="checkbox"]')
-  for (const cb of agreeCheckboxes) {
-    const checked = await cb.evaluate(el => el.checked)
-    if (!checked) {
-      await jsClick(cb)
-      log('已勾選同意條款', 'info')
-      await new Promise(r => setTimeout(r, 200))
-    }
-  }
+  await page.evaluate(() => {
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      if (cb.checked) return
+      // 先嘗試點對應的 <label>（KKTIX 常用自訂 checkbox 樣式，input 本身不可見）
+      const label = cb.labels?.[0] || document.querySelector(`label[for="${cb.id}"]`)
+      if (label) {
+        label.scrollIntoView({ block: 'center' })
+        label.click()
+      } else {
+        cb.scrollIntoView({ block: 'center' })
+        cb.click()
+      }
+      // 強制設為 checked 並觸發 Vue/React 監聽的事件
+      cb.checked = true
+      cb.dispatchEvent(new Event('change', { bubbles: true }))
+      cb.dispatchEvent(new Event('input',  { bubbles: true }))
+    })
+  })
+  await new Promise(r => setTimeout(r, 300))
+  const checkResult = await page.evaluate(() =>
+    [...document.querySelectorAll('input[type="checkbox"]')].every(cb => cb.checked)
+  )
+  log(checkResult ? '已勾選同意條款' : '⚠️ 同意條款勾選可能未成功，請手動確認', checkResult ? 'info' : 'warn')
 
   // ── 步驟 3.5：回答自訂問題（如需要輸入答案才能報名）────────
   await fillCustomQuestions(page, customAnswer, log)
@@ -485,7 +551,30 @@ async function fillForm(page, formData, log) {
   }
 
   log('表單填寫完成，提交中...', 'info')
-  await safeClick(page, SELECTORS.form.submitBtn)
+
+  // 優先找 type="submit"，找不到就改用文字比對
+  let submitClicked = false
+  const submitBySelector = await page.$(SELECTORS.form.submitBtn).catch(() => null)
+  if (submitBySelector) {
+    await submitBySelector.evaluate(el => { el.scrollIntoView({ block: 'center' }); el.click() })
+    submitClicked = true
+    log('點擊送出按鈕（selector）', 'info')
+  }
+
+  if (!submitClicked) {
+    const submitByText = await findButtonByText(page, ['下一步', '送出', '確認', '提交', '完成報名', 'Submit', 'Next', 'Confirm'])
+    if (submitByText) {
+      const txt = await submitByText.evaluate(el => (el.innerText || el.value || '').trim())
+      await submitByText.evaluate(el => { el.scrollIntoView({ block: 'center' }); el.click() })
+      submitClicked = true
+      log(`點擊「${txt}」送出按鈕`, 'info')
+    }
+  }
+
+  if (!submitClicked) {
+    log('找不到送出按鈕，請手動確認', 'warn')
+  }
+
   await page.waitForNavigation({ timeout: 20000 }).catch(() => {})
 }
 

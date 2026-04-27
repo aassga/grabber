@@ -67,11 +67,35 @@
           />
         </div>
         <div class="form-group">
-          <label class="form-label">票種名稱</label>
+          <label class="form-label">
+            票種名稱
+            <button
+              class="refresh-btn"
+              :disabled="!settings.eventUrl || ticketsLoading"
+              @click="loadTicketTypes"
+              title="從活動頁載入票種"
+            >{{ ticketsLoading ? '載入中...' : '↻ 載入票種' }}</button>
+          </label>
+          <!-- 有票種清單時顯示下拉 -->
+          <select
+            v-if="ticketOptions.length"
+            v-model="settings.ticketType"
+            class="form-select"
+          >
+            <option value="">-- 自動選第一種票 --</option>
+            <option
+              v-for="t in ticketOptions"
+              :key="t.name"
+              :value="t.name"
+              :disabled="t.soldOut"
+            >{{ t.soldOut ? '[售完] ' : '' }}{{ t.name }}{{ t.price ? ' - ' + t.price : '' }}</option>
+          </select>
+          <!-- 沒有清單時顯示文字輸入 -->
           <input
+            v-else
             v-model="settings.ticketType"
             class="form-input"
-            placeholder="例：一般票、早鳥票"
+            placeholder="例：一般票A（或點 ↻ 載入票種）"
           />
         </div>
         <div class="form-group">
@@ -256,6 +280,8 @@ export default {
       events: [],
       eventsLoading: false,
       dropdownOpen: false,
+      ticketOptions: [],
+      ticketsLoading: false,
     }
   },
   computed: {
@@ -283,11 +309,12 @@ export default {
         const res = await fetch('http://localhost:3000/api/events?q=')
         const data = await res.json()
         if (data.ok) {
-          const thisYear = new Date().getFullYear()
+          const today = new Date(); today.setHours(0, 0, 0, 0)
           this.events = data.events
             .filter(e => {
-              const m = (e.date || '').match(/^(\d{4})/)
-              return m ? parseInt(m[1]) >= thisYear : true
+              const m = (e.date || '').match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/)
+              if (!m) return true
+              return new Date(+m[1], +m[2] - 1, +m[3]) >= today
             })
             .sort((a, b) => {
               const parse = d => {
@@ -310,6 +337,29 @@ export default {
     pickEvent(e) {
       grabberStore.settings.eventUrl = e.url
       this.dropdownOpen = false
+      this.ticketOptions = []        // 清空舊票種，等使用者手動載入
+    },
+    async loadTicketTypes() {
+      const url = grabberStore.settings.eventUrl
+      if (!url) return
+      this.ticketsLoading = true
+      this.ticketOptions = []
+      try {
+        const res = await fetch(`http://localhost:3000/api/event-tickets?url=${encodeURIComponent(url)}`)
+        const data = await res.json()
+        if (data.ok && data.tickets.length) {
+          this.ticketOptions = data.tickets
+          // 自動選第一個未售完的票種
+          const first = data.tickets.find(t => !t.soldOut)
+          if (first && !grabberStore.settings.ticketType) {
+            grabberStore.settings.ticketType = first.name
+          }
+        } else {
+          this.ticketOptions = []
+        }
+      } catch (e) { /* 靜默失敗 */ } finally {
+        this.ticketsLoading = false
+      }
     },
     clearEvent() {
       grabberStore.settings.eventUrl = ''
