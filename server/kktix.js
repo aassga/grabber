@@ -213,11 +213,11 @@ async function login(page, email, password, log) {
 async function gotoEvent(page, url, log) {
   log(`前往活動頁：${url}`, 'info')
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
-  // 等待頁面 JS 執行完畢（活動頁有動態內容）
-  await new Promise(r => setTimeout(r, 2000))
+  // 等 body 出現即可繼續，不固定等待（比 2 秒 sleep 快得多）
+  await page.waitForSelector('body', { timeout: 3000 }).catch(() => {})
   const actualUrl = page.url()
   if (actualUrl !== url) log(`實際落地頁：${actualUrl}`, 'info')
-  await waitForCloudflare(page, log, 20000)
+  // Cloudflare 不在這裡檢查，由 _grabLoop 統一處理，避免重複
 }
 
 // 檢查票券是否可搶（回傳 'available' | 'sold_out' | 'not_yet'）
@@ -256,6 +256,66 @@ async function checkTicketStatus(page, ticketType) {
   return 'not_yet'
 }
 
+// 自動回答 KKTIX 自訂問答（例：請輸入「我同意比賽規則」）
+async function fillCustomQuestions(page, fallbackAnswer, log) {
+  // 找所有可能的問答區塊
+  const blocks = await page.$$([
+    '[class*="question"]', '[class*="Question"]',
+    '.custom-question', '.question-group',
+    'section', '.form-group',
+  ].join(','))
+
+  let handled = 0
+  const seenInputs = new Set()
+
+  for (const block of blocks) {
+    const text = await block.evaluate(el => el.innerText || '').catch(() => '')
+    const inputs = await block.$$('input[type="text"]:not([type="hidden"]), textarea')
+
+    for (const input of inputs) {
+      const id = await input.evaluate(el => el.id || el.name || el.className)
+      if (seenInputs.has(id)) continue
+      seenInputs.add(id)
+
+      // 已有值就跳過
+      const existing = await input.evaluate(el => el.value.trim())
+      if (existing) continue
+
+      // 優先：從題目文字提取「」裡的答案（格式：請輸入「答案」）
+      let answer = ''
+      const match = text.match(/請輸入[「""](.+?)[」""]/)
+      if (match) {
+        answer = match[1]
+        log(`偵測到自訂問題，自動回答：${answer}`, 'info')
+      } else if (fallbackAnswer) {
+        answer = fallbackAnswer
+        log(`使用預設答案填入自訂問題：${answer}`, 'info')
+      }
+
+      if (answer) {
+        await input.evaluate(el => { el.scrollIntoView({ block: 'center' }) })
+        await input.click({ clickCount: 3 })
+        await input.type(answer, { delay: 60 })
+        handled++
+      }
+    }
+  }
+
+  if (handled === 0 && fallbackAnswer) {
+    // 更寬鬆：找所有空白 text input 填入備用答案
+    const allInputs = await page.$$('input[type="text"]:not([disabled]):not([readonly])')
+    for (const input of allInputs) {
+      const id = await input.evaluate(el => el.id || el.name || '')
+      if (seenInputs.has(id)) continue
+      const val = await input.evaluate(el => el.value.trim())
+      if (!val) {
+        await input.type(fallbackAnswer, { delay: 60 })
+        log(`備用答案已填入（${id || '未知欄位'}）`, 'warn')
+      }
+    }
+  }
+}
+
 // 共用：用 JS DOM click()，完全不受 viewport/遮擋限制
 async function jsClick(el) {
   await el.evaluate(node => {
@@ -265,7 +325,7 @@ async function jsClick(el) {
 }
 
 // 選票 + 設定數量 + 勾選同意 + 點下一步
-async function selectTicket(page, ticketType, quantity, log) {
+async function selectTicket(page, ticketType, quantity, log, customAnswer) {
   log(`選取票種「${ticketType || '第一個可用票種'}」...`, 'info')
 
   // ── 步驟 1：找目標票種 row ────────────────────────────────
@@ -332,6 +392,27 @@ async function selectTicket(page, ticketType, quantity, log) {
       log('已勾選同意條款', 'info')
       await new Promise(r => setTimeout(r, 200))
     }
+  }
+
+  // ── 步驟 3.5：回答自訂問題（如需要輸入答案才能報名）────────
+  await fillCustomQuestions(page, customAnswer, log)
+
+  // ── 步驟 3.6：檢查是否還有未填的必填欄位（需要使用者手動介入）──
+  const unfilledCount = await page.evaluate(() => {
+    const inputs = [...document.querySelectorAll(
+      'input[type="text"]:not([disabled]):not([readonly]):not([type="hidden"]), textarea:not([disabled]):not([readonly])'
+    )]
+    // 排除已知欄位（姓名、電話等）和隱藏欄位
+    return inputs.filter(el => {
+      if (!el.offsetParent) return false // 不可見
+      if (el.closest('[class*="agree"], [class*="payment"], .name-field, .phone-field')) return false
+      return el.value.trim() === '' // 仍是空的
+    }).length
+  })
+
+  if (unfilledCount > 0) {
+    log(`⚠️ 偵測到 ${unfilledCount} 個未填欄位，需要手動處理`, 'warn')
+    return 'needs_manual' // 通知 grabber 暫停
   }
 
   // ── 步驟 4：點擊「下一步」或報名按鈕 ─────────────────────

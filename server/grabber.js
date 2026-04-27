@@ -172,9 +172,17 @@ class Grabber {
 
       await kktix.gotoEvent(this.page, settings.eventUrl, this.log.bind(this))
 
-      // 活動頁也可能出現 Cloudflare，等使用者手動通過
-      const cfQuick = await kktix.waitForCloudflare(this.page, this.log.bind(this), 10000)
-      if (!cfQuick) {
+      // 快速檢查是否有 Cloudflare（單次查詢，不輪詢）
+      const isCfNow = await this.page.evaluate(() => {
+        return !!(
+          document.querySelector('#challenge-form, #challenge-running, #challenge-stage, .cf-browser-verification, #cf-please-wait') ||
+          document.title.includes('Just a moment') ||
+          document.title.includes('正在執行安全驗證') ||
+          document.title.includes('Attention Required')
+        )
+      }).catch(() => false)
+
+      if (isCfNow) {
         this.log('⚠️ 偵測到 Cloudflare 驗證，請在瀏覽器中完成後系統自動繼續', 'warn')
         this.onStatus('⚠️ 等待 Cloudflare 驗證...')
         await kktix.waitForCloudflare(this.page, null, 120000)
@@ -220,7 +228,14 @@ class Grabber {
   async _purchase() {
     const { settings, formData, paymentData } = this.config
 
-    await kktix.selectTicket(this.page, settings.ticketType, settings.quantity, this.log.bind(this))
+    const selectResult = await kktix.selectTicket(this.page, settings.ticketType, settings.quantity, this.log.bind(this), formData.customAnswer)
+
+    if (selectResult === 'needs_manual') {
+      this.log('⚠️ 頁面有未填欄位（自訂問題或特殊驗證），請在瀏覽器中手動填寫後點擊「我已完成驗證」', 'warn')
+      this.onStatus('⚠️ 等待手動填寫自訂問題...')
+      await this._handleCaptcha()
+      if (!this.running) return
+    }
 
     if (await kktix.hasCaptcha(this.page)) {
       await this._handleCaptcha()

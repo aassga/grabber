@@ -173,6 +173,15 @@
           <label class="form-label">聯絡 Email</label>
           <input v-model="formData.email" class="form-input" type="email" placeholder="example@email.com" />
         </div>
+        <div class="form-group form-full">
+          <label class="form-label">自訂問題備用答案</label>
+          <input
+            v-model="formData.customAnswer"
+            class="form-input"
+            placeholder="例：我同意比賽規則（系統自動偵測不到時使用）"
+          />
+          <p class="field-hint">若活動有「請輸入「X」」格式的問題，系統會自動提取答案；此欄位為無法自動偵測時的備援</p>
+        </div>
       </div>
     </div>
 
@@ -322,7 +331,7 @@ export default {
         multiAccount: false, captchaHint: true,
         scheduledStart: false, scheduledTime: '',
       })
-      Object.assign(grabberStore.formData, { name: '', phone: '', idNumber: '', email: '' })
+      Object.assign(grabberStore.formData, { name: '', phone: '', idNumber: '', email: '', customAnswer: '' })
       Object.assign(grabberStore.paymentData, { cardNumber: '', expiry: '', cvv: '', cardHolder: '' })
     },
     formatCard(e) {
@@ -382,6 +391,7 @@ export default {
 
 .req { color: #ef4444; }
 .card-input { letter-spacing: 2px; font-family: monospace; }
+.field-hint { font-size: 12px; color: #475569; margin-top: 6px; }
 
 @media (max-width: 768px) {
   .action-bar { flex-wrap: wrap; }

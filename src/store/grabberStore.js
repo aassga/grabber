@@ -38,6 +38,7 @@ const defaultFormData = {
   phone: '',
   idNumber: '',
   email: '',
+  customAnswer: '',
 }
 
 export const grabberStore = reactive({

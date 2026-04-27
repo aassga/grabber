@@ -132,6 +132,10 @@ export default {
 </script>
 
 <style scoped>
+.page-header { margin-bottom: 24px; }
+.page-title { font-size: 24px; font-weight: 700; color: #e2e8f0; }
+.page-desc { font-size: 14px; color: #64748b; margin-top: 4px; }
+
 .search-bar {
   display: flex;
   align-items: center;
