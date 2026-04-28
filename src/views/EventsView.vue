@@ -79,6 +79,7 @@
 
 <script>
 import { grabberStore } from '../store/grabberStore'
+import { API_BASE } from '../services/socket'
 
 export default {
   name: 'EventsView',
@@ -104,7 +105,7 @@ export default {
       this.loading = true
       this.error = null
       try {
-        const res = await fetch(`http://localhost:3000/api/events?q=${encodeURIComponent(this.query)}`)
+        const res = await fetch(`${API_BASE}/api/events?q=${encodeURIComponent(this.query)}`)
         const data = await res.json()
         if (!data.ok) throw new Error(data.error || '載入失敗')
         const today = new Date(); today.setHours(0, 0, 0, 0)

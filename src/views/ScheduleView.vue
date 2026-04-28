@@ -182,7 +182,7 @@
 
 <script>
 import { grabberStore } from '../store/grabberStore'
-import socketService from '../services/socket'
+import socketService, { API_BASE } from '../services/socket'
 
 export default {
   name: 'ScheduleView',
@@ -232,7 +232,7 @@ export default {
     async loadEvents() {
       this.eventsLoading = true
       try {
-        const res = await fetch('http://localhost:3000/api/events?q=')
+        const res = await fetch(`${API_BASE}/api/events?q=`)
         const data = await res.json()
         if (data.ok) {
           const today = new Date(); today.setHours(0, 0, 0, 0)

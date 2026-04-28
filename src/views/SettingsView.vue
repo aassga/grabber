@@ -271,6 +271,7 @@
 
 <script>
 import { grabberStore } from '../store/grabberStore'
+import { API_BASE } from '../services/socket'
 
 export default {
   name: 'SettingsView',
@@ -306,7 +307,7 @@ export default {
     async loadEvents() {
       this.eventsLoading = true
       try {
-        const res = await fetch('http://localhost:3000/api/events?q=')
+        const res = await fetch(`${API_BASE}/api/events?q=`)
         const data = await res.json()
         if (data.ok) {
           const today = new Date(); today.setHours(0, 0, 0, 0)
@@ -345,7 +346,7 @@ export default {
       this.ticketsLoading = true
       this.ticketOptions = []
       try {
-        const res = await fetch(`http://localhost:3000/api/event-tickets?url=${encodeURIComponent(url)}`)
+        const res = await fetch(`${API_BASE}/api/event-tickets?url=${encodeURIComponent(url)}`)
         const data = await res.json()
         if (data.ok && data.tickets.length) {
           this.ticketOptions = data.tickets
