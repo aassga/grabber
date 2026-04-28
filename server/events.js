@@ -5,6 +5,17 @@ const os = require('os')
 
 puppeteer.use(StealthPlugin())
 
+// 在 Linux（Render）上用 puppeteer 內建路徑；本機 Windows 不帶 executablePath
+function getChromePath() {
+  if (process.platform === 'win32') return undefined
+  try {
+    const { executablePath } = require('puppeteer')
+    return executablePath()
+  } catch {
+    return undefined
+  }
+}
+
 const USER_DATA_DIR = path.join(__dirname, '..', '.chrome-profile-scraper')
 
 let cache = { data: null, query: null, at: 0 }
@@ -63,6 +74,7 @@ async function fetchEvents(query = '') {
 
   const browser = await puppeteer.launch({
     headless: 'new',
+    executablePath: getChromePath(),
     userDataDir: USER_DATA_DIR,
     args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--lang=zh-TW'],
   })
@@ -150,6 +162,7 @@ async function fetchTicketTypes(eventUrl) {
 
   const browser = await puppeteer.launch({
     headless: 'new',
+    executablePath: getChromePath(),
     userDataDir: tmpProfile,
     args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--lang=zh-TW'],
   })
