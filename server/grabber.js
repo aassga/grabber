@@ -10,11 +10,17 @@ const USER_DATA_DIR = path.join(__dirname, '..', '.chrome-profile')
 
 // 找系統安裝的 Chrome（不用 Puppeteer 內建 Chromium，Cloudflare 認得那個）
 function findChrome() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH
   const candidates = [
+    // Windows
     (process.env.PROGRAMFILES || '') + '\\Google\\Chrome\\Application\\chrome.exe',
     (process.env['PROGRAMFILES(X86)'] || '') + '\\Google\\Chrome\\Application\\chrome.exe',
     (process.env.LOCALAPPDATA || '') + '\\Google\\Chrome\\Application\\chrome.exe',
     (process.env.PROGRAMFILES || '') + '\\Microsoft\\Edge\\Application\\msedge.exe',
+    // Linux (Railway / Docker)
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
   ]
   for (const p of candidates) {
     if (p && fs.existsSync(p)) return p
