@@ -64,8 +64,7 @@ async function fetchEvents(query = '') {
   const browser = await puppeteer.launch({
     headless: 'new',
     userDataDir: USER_DATA_DIR,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    args: ['--no-sandbox', '--disable-gpu', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--lang=zh-TW'],
+    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--lang=zh-TW'],
   })
 
   try {
@@ -152,8 +151,7 @@ async function fetchTicketTypes(eventUrl) {
   const browser = await puppeteer.launch({
     headless: 'new',
     userDataDir: tmpProfile,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
-    args: ['--no-sandbox', '--disable-gpu', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--lang=zh-TW'],
+    args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--lang=zh-TW'],
   })
 
   try {
