@@ -1,8 +1,9 @@
 import { grabberStore } from '../store/grabberStore'
 
-const WS_URL = 'wss://desirable-dedication-production.up.railway.app'
-export const API_URL = 'https://desirable-dedication-production.up.railway.app/api'
-export const API_BASE = 'https://desirable-dedication-production.up.railway.app'
+const _base = process.env.VUE_APP_API_BASE || 'http://localhost:3000'
+const WS_URL = _base.replace(/^http/, 'ws')
+export const API_URL = `${_base}/api`
+export const API_BASE = _base
 
 let ws = null
 let reconnectTimer = null
