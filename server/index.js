@@ -134,8 +134,8 @@ app.get('/api/events', async (req, res) => {
 })
 
 // ─── 啟動 ─────────────────────────────────────────────────────
-const PORT = 3000
-server.listen(PORT, () => {
-  console.log(`[Server] 後端啟動於 http://localhost:${PORT}`)
+const PORT = process.env.PORT || 3000
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`[Server] 後端啟動於 http://0.0.0.0:${PORT}`)
   console.log('[Server] WebSocket 監聽中...')
 })
