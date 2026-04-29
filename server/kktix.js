@@ -55,11 +55,20 @@ async function waitForCloudflare(page, log, timeout = 30000) {
   const start = Date.now()
   while (Date.now() - start < timeout) {
     const isChallenge = await page.evaluate((sel) => {
+      const body = document.body?.innerText || ''
       return !!(
         document.querySelector(sel) ||
+        // Turnstile widget iframe（KKTIX 內嵌式驗證）
+        document.querySelector('iframe[src*="challenges.cloudflare.com"]') ||
+        document.querySelector('[class*="turnstile"], [id*="turnstile"]') ||
+        // 標題比對
         document.title.includes('Just a moment') ||
         document.title.includes('正在執行安全驗證') ||
-        document.title.includes('Attention Required')
+        document.title.includes('Attention Required') ||
+        // body 文字比對（內嵌式不一定改 title）
+        body.includes('正在執行安全驗證') ||
+        body.includes('驗證您是人類') ||
+        body.includes('Verifying you are human')
       )
     }, SELECTORS.cloudflare.challenge).catch(() => false)
 
@@ -140,10 +149,7 @@ async function login(page, email, password, log) {
     await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
   }
 
-  // 等待頁面穩定
-  await page.waitForTimeout(800)
-
-  // 嘗試多組 email selector
+  // 等待登入表單出現（最多 10 秒），若找不到代表 Cloudflare 仍在擋
   const emailSelectors = [
     '#user_email',
     'input[name="user[email]"]',
@@ -154,10 +160,26 @@ async function login(page, email, password, log) {
   ]
   let emailSel = null
   for (const sel of emailSelectors) {
-    const el = await page.$(sel)
-    if (el) { emailSel = sel; break }
+    try {
+      await page.waitForSelector(sel, { timeout: 10000 })
+      emailSel = sel
+      break
+    } catch (_) { /* 繼續試下一個 */ }
   }
-  if (!emailSel) throw new Error('找不到 Email 輸入欄位，KKTIX 頁面結構可能已變更')
+
+  // 若登入欄位仍找不到，很可能是 Cloudflare 內嵌驗證未被偵測到
+  if (!emailSel) {
+    log('⚠️ 找不到登入欄位，可能有 Cloudflare 驗證未偵測到，請在瀏覽器手動完成後系統自動繼續（最多等 120 秒）', 'warn')
+    await waitForCloudflare(page, null, 120000)
+    log('驗證通過，重新載入登入頁...', 'info')
+    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 })
+    await new Promise(r => setTimeout(r, 1000))
+    for (const sel of emailSelectors) {
+      const el = await page.$(sel)
+      if (el) { emailSel = sel; break }
+    }
+    if (!emailSel) throw new Error('找不到 Email 輸入欄位，KKTIX 頁面結構可能已變更')
+  }
   log(`找到 Email 欄位：${emailSel}`, 'info')
 
   // 嘗試多組 password selector
@@ -359,12 +381,23 @@ async function jsClick(el) {
 async function selectTicket(page, ticketType, quantity, log, customAnswer) {
   log(`選取票種「${ticketType || '第一個可用票種'}」...`, 'info')
 
-  // ── 預備：偵測是否在活動描述頁，若是則先點「立即購票」進入報名頁 ──────
+  // ── 預備：偵測是否在票種選擇頁，若是活動描述頁則先點「立即購票」 ──────
   const isOnTicketForm = await page.evaluate(() => {
-    const hasPlusBtn = [...document.querySelectorAll('button, span, a, div')].some(el => {
+    // 已在 registrations/new 或 registrations/xxx
+    if (location.href.includes('/registrations/')) return true
+
+    const hasPlusBtn = [...document.querySelectorAll('button, span, a, div, [role="button"]')].some(el => {
       const t = el.textContent.trim()
       const c = (el.className || '').toLowerCase()
-      return t === '+' || t === '＋' || c.includes('btn-plus') || c.includes('quantity-up')
+      const ng = (el.getAttribute('ng-click') || '').toLowerCase()
+      const onclick = (el.getAttribute('onclick') || '').toLowerCase()
+      return (
+        t === '+' || t === '＋' ||
+        c.includes('btn-plus') || c.includes('quantity-up') ||
+        c.includes('increase') || c.includes('plus') ||
+        ng.includes('increase') || ng.includes('quantity') ||
+        onclick.includes('increase')
+      )
     })
     const hasQtySelect = !!document.querySelector('select[name*="qty"], select[name*="count"], select.ticket-count')
     const hasTicketRow  = !!document.querySelector('.ticket-row, .ticket-type-row')
@@ -378,8 +411,16 @@ async function selectTicket(page, ticketType, quantity, log, customAnswer) {
     if (regBtn) {
       await jsClick(regBtn)
       log('已點擊「立即購票」，等待進入票種選擇頁...', 'info')
-      await page.waitForNavigation({ timeout: 20000 }).catch(() => {})
-      await new Promise(r => setTimeout(r, 1000))
+
+      // 跨網域 SSO 可能有多次轉跳，輪詢 URL 直到到達 registrations/new（最多 20 秒）
+      const pollStart = Date.now()
+      while (Date.now() - pollStart < 20000) {
+        const cur = page.url()
+        if (cur.includes('/registrations/new') || cur.includes('/registrations/')) break
+        await new Promise(r => setTimeout(r, 400))
+      }
+      await new Promise(r => setTimeout(r, 800))
+      log(`已到達：${page.url()}`, 'info')
     } else {
       log('⚠️ 找不到「立即購票」按鈕，嘗試在當前頁面繼續', 'warn')
     }
@@ -407,9 +448,9 @@ async function selectTicket(page, ticketType, quantity, log, customAnswer) {
       // 新版活動頁：用 page.evaluate 在頁面內直接找並點擊 + 按鈕
       // 支援 button / span / a / div，比對文字、class、aria-label
       const clicked = await page.evaluate((ticketName, qty) => {
-        // 找對應票種的行（任意容器）
+        // 找對應票種的行（ticketName 為空時直接在整頁找）
         const allEls = [...document.querySelectorAll('tr, [class*="ticket"], [class*="row"]')]
-        const targetEl = allEls.find(el => el.innerText.includes(ticketName)) || document.body
+        const targetEl = (ticketName && allEls.find(el => el.innerText.includes(ticketName))) || document.body
 
         // 在該行找 + 按鈕（廣義搜尋）
         const candidates = [...targetEl.querySelectorAll('button, a, span, div, [role="button"]')]
@@ -445,15 +486,16 @@ async function selectTicket(page, ticketType, quantity, log, customAnswer) {
           }
         }
 
-        // 按 + qty 次
+        // 按 + qty 次（同時用 click() 和 dispatchEvent 確保 Vue/Angular 都能收到）
         for (let i = 0; i < qty; i++) {
+          plusBtn.click()
           plusBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
         }
         return true
       }, ticketType || '', quantity)
 
       if (clicked) {
-        await new Promise(r => setTimeout(r, 300))
+        await new Promise(r => setTimeout(r, 1500)) // 等 Vue/Angular 重繪 UI（勾選框才會出現）
         log(`數量設定為 ${quantity} 張（+按鈕）`, 'info')
       } else {
         log('⚠️ 找不到 +/- 數量按鈕，請手動確認數量', 'warn')
@@ -480,7 +522,7 @@ async function selectTicket(page, ticketType, quantity, log, customAnswer) {
       cb.dispatchEvent(new Event('input',  { bubbles: true }))
     })
   })
-  await new Promise(r => setTimeout(r, 300))
+  await new Promise(r => setTimeout(r, 800)) // 等 Vue/Angular 更新 DOM
   const checkResult = await page.evaluate(() =>
     [...document.querySelectorAll('input[type="checkbox"]')].every(cb => cb.checked)
   )
@@ -520,7 +562,7 @@ async function selectTicket(page, ticketType, quantity, log, customAnswer) {
   if (!clicked) {
     const ctaBtn = await findButtonByText(page, ['下一步', '立即報名', '報名', '購票', 'Register', 'Next'])
     if (ctaBtn) {
-      const text = await ctaBtn.evaluate(el => (el.innerText || el.value || '').trim())
+      const text = await ctaBtn.evaluate(el => (el.innerText || el.value || '').trim().split('\n')[0].substring(0, 20))
       await jsClick(ctaBtn)
       clicked = true
       log(`點擊「${text}」按鈕`, 'info')
@@ -560,16 +602,33 @@ async function fillForm(page, formData, log) {
   await fillAll(SELECTORS.form.idField,    formData.idNumber, '身分證')
   await fillAll(SELECTORS.form.emailField, formData.email,    'Email')
 
-  // 勾選所有同意條款 checkbox
-  const agreeBoxes = await page.$$(SELECTORS.form.agreeCheckbox)
-  for (const cb of agreeBoxes) {
-    const checked = await cb.evaluate(el => el.checked)
-    if (!checked) await cb.click()
-  }
+  // 勾選頁面上所有可見的 checkbox（含服務條款、主辦隱私權、公開顯示等）
+  await page.evaluate(() => {
+    document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      if (cb.checked) return
+      // 優先點對應 label（KKTIX 自訂樣式 input 本身不可見）
+      const label = cb.labels?.[0] || document.querySelector(`label[for="${cb.id}"]`)
+      if (label) {
+        label.scrollIntoView({ block: 'center' })
+        label.click()
+      } else {
+        cb.scrollIntoView({ block: 'center' })
+        cb.click()
+      }
+      cb.checked = true
+      cb.dispatchEvent(new Event('change', { bubbles: true }))
+      cb.dispatchEvent(new Event('input',  { bubbles: true }))
+    })
+  })
+  await new Promise(r => setTimeout(r, 400))
+  const allChecked = await page.evaluate(() =>
+    [...document.querySelectorAll('input[type="checkbox"]')].every(cb => cb.checked)
+  )
+  log(allChecked ? '已勾選所有條款' : '⚠️ 部分條款勾選可能未成功，請手動確認', allChecked ? 'info' : 'warn')
 
   log('表單填寫完成，提交中...', 'info')
 
-  // 優先找 type="submit"，找不到就改用文字比對
+  // 優先找 type="submit"，找不到就改用文字比對（含「確認表單」）
   let submitClicked = false
   const submitBySelector = await page.$(SELECTORS.form.submitBtn).catch(() => null)
   if (submitBySelector) {
@@ -579,7 +638,9 @@ async function fillForm(page, formData, log) {
   }
 
   if (!submitClicked) {
-    const submitByText = await findButtonByText(page, ['下一步', '送出', '確認', '提交', '完成報名', 'Submit', 'Next', 'Confirm'])
+    const submitByText = await findButtonByText(page, [
+      '確認表單', '下一步', '送出', '確認', '提交', '完成報名', 'Submit', 'Next', 'Confirm',
+    ])
     if (submitByText) {
       const txt = await submitByText.evaluate(el => (el.innerText || el.value || '').trim())
       await submitByText.evaluate(el => { el.scrollIntoView({ block: 'center' }); el.click() })
