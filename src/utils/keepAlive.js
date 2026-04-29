@@ -1,9 +1,9 @@
-import { getApiBase } from '../services/socket'
+import { getApiBase, apiFetch } from '../services/socket'
 
 export function startKeepAlive() {
   const ping = async () => {
     try {
-      await fetch(`${getApiBase()}/api/health`)
+      await apiFetch(`${getApiBase()}/api/health`)
     } catch (e) { /* 後端休眠中或未啟動，靜默忽略 */ }
   }
 
