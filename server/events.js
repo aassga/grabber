@@ -16,8 +16,6 @@ function getChromePath() {
   }
 }
 
-const USER_DATA_DIR = path.join(__dirname, '..', '.chrome-profile-scraper')
-
 let cache = { data: null, query: null, at: 0 }
 const CACHE_TTL = 5 * 60 * 1000
 
@@ -72,10 +70,11 @@ async function fetchEvents(query = '') {
     return cache.data
   }
 
+  const tmpProfile = path.join(os.tmpdir(), `kktix-events-${Date.now()}`)
   const browser = await puppeteer.launch({
     headless: 'new',
     executablePath: getChromePath(),
-    userDataDir: USER_DATA_DIR,
+    userDataDir: tmpProfile,
     args: ['--no-sandbox', '--disable-blink-features=AutomationControlled', '--disable-dev-shm-usage', '--lang=zh-TW'],
   })
 
