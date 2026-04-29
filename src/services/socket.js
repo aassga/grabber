@@ -13,6 +13,18 @@ const WS_URL = _base.replace(/^http/, 'ws')
 export const API_URL = `${_base}/api`
 export const API_BASE = _base
 
+// ngrok 免費版需要此 header 才能跳過攔截頁面（可在 Vue 元件直接 import）
+export function apiFetch(url, options = {}) {
+  return fetch(url, {
+    ...options,
+    headers: {
+      'ngrok-skip-browser-warning': '1',
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  })
+}
+
 let ws = null
 let reconnectTimer = null
 
@@ -84,22 +96,21 @@ function sendCaptchaResolved() {
 }
 
 async function startGrabbing(payload) {
-  const res = await fetch(`${API_URL}/start`, {
+  const res = await apiFetch(`${API_URL}/start`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
   return res.json()
 }
 
 async function stopGrabbing() {
-  const res = await fetch(`${API_URL}/stop`, { method: 'POST' })
+  const res = await apiFetch(`${API_URL}/stop`, { method: 'POST' })
   return res.json()
 }
 
 async function checkHealth() {
   try {
-    const res = await fetch(`${API_URL}/health`)
+    const res = await apiFetch(`${API_URL}/health`)
     return res.json()
   } catch {
     return { ok: false }
