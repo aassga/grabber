@@ -171,9 +171,10 @@ async function fetchTicketTypes(eventUrl) {
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
 
     await page.goto(eventUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
-    // 等待票種表格出現
-    await page.waitForSelector('table, [class*="ticket"], tbody', { timeout: 8000 }).catch(() => {})
-    await new Promise(r => setTimeout(r, 1000))
+    // 等待票種表格出現（最多 30 秒）
+    await page.waitForSelector('table, tbody, [class*="ticket"], [class*="registration"]', { timeout: 30000 }).catch(() => {})
+    // 再等 JS 渲染完成
+    await new Promise(r => setTimeout(r, 2000))
 
     const tickets = await page.evaluate(() => {
       const seen = new Set()
