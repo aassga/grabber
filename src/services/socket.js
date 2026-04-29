@@ -1,6 +1,14 @@
 import { grabberStore } from '../store/grabberStore'
 
-const _base = process.env.VUE_APP_API_BASE || 'http://localhost:3000'
+// 優先讀取使用者在設定頁填入的 ngrok 網址，fallback 到環境變數
+function getBase() {
+  return localStorage.getItem('backend-url') ||
+    process.env.VUE_APP_API_BASE ||
+    'http://localhost:3000'
+}
+
+export function getApiBase() { return getBase() }
+const _base = getBase()
 const WS_URL = _base.replace(/^http/, 'ws')
 export const API_URL = `${_base}/api`
 export const API_BASE = _base

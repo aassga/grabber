@@ -176,6 +176,29 @@
       </div>
     </div>
 
+    <!-- 後端連線設定 -->
+    <div class="card">
+      <div class="card-title">🌐 後端連線設定</div>
+      <p class="section-hint">使用 ngrok 將本機後端暴露到外網時，在此填入 ngrok 網址</p>
+      <div class="form-group">
+        <label class="form-label">後端網址（ngrok / 本機）</label>
+        <div class="backend-url-row">
+          <input
+            v-model="backendUrl"
+            class="form-input"
+            placeholder="https://xxxx.ngrok-free.app 或 http://localhost:3000"
+          />
+          <button class="btn btn-primary" @click="saveBackendUrl">套用</button>
+          <button class="btn btn-outline" @click="resetBackendUrl">重置</button>
+        </div>
+        <p class="field-hint">
+          目前連線：<code>{{ currentBackendUrl }}</code>
+          <span v-if="isNgrok" class="ngrok-badge">ngrok</span>
+          &nbsp;套用後需重新整理頁面（F5）才會生效
+        </p>
+      </div>
+    </div>
+
     <!-- 報名表單資料 -->
     <div class="card">
       <div class="card-title">📝 報名表單資料</div>
@@ -283,6 +306,7 @@ export default {
       dropdownOpen: false,
       ticketOptions: [],
       ticketsLoading: false,
+      backendUrl: localStorage.getItem('backend-url') || '',
     }
   },
   computed: {
@@ -294,6 +318,14 @@ export default {
     },
     selectedEvent() {
       return this.events.find(e => e.url === grabberStore.settings.eventUrl) || null
+    },
+    currentBackendUrl() {
+      return localStorage.getItem('backend-url') ||
+        process.env.VUE_APP_API_BASE ||
+        'http://localhost:3000'
+    },
+    isNgrok() {
+      return this.currentBackendUrl.includes('ngrok')
     },
   },
   mounted() {
@@ -371,6 +403,20 @@ export default {
         this.dropdownOpen = false
       }
     },
+    saveBackendUrl() {
+      const url = this.backendUrl.trim().replace(/\/$/, '')
+      if (url) {
+        localStorage.setItem('backend-url', url)
+      } else {
+        localStorage.removeItem('backend-url')
+      }
+      window.location.reload()
+    },
+    resetBackendUrl() {
+      this.backendUrl = ''
+      localStorage.removeItem('backend-url')
+      window.location.reload()
+    },
     saveSettings() {
       this.saved = true
       setTimeout(() => { this.saved = false }, 2000)
@@ -443,6 +489,21 @@ export default {
 .req { color: #ef4444; }
 .card-input { letter-spacing: 2px; font-family: monospace; }
 .field-hint { font-size: 12px; color: #475569; margin-top: 6px; }
+.field-hint code { background: #0f1117; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+
+.backend-url-row { display: flex; gap: 8px; align-items: center; }
+.backend-url-row .form-input { flex: 1; }
+
+.ngrok-badge {
+  background: rgba(124,106,255,0.2);
+  color: #7c6aff;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 4px;
+  vertical-align: middle;
+}
 
 @media (max-width: 768px) {
   .action-bar { flex-wrap: wrap; }
