@@ -359,6 +359,32 @@ async function jsClick(el) {
 async function selectTicket(page, ticketType, quantity, log, customAnswer) {
   log(`選取票種「${ticketType || '第一個可用票種'}」...`, 'info')
 
+  // ── 預備：偵測是否在活動描述頁，若是則先點「立即購票」進入報名頁 ──────
+  const isOnTicketForm = await page.evaluate(() => {
+    const hasPlusBtn = [...document.querySelectorAll('button, span, a, div')].some(el => {
+      const t = el.textContent.trim()
+      const c = (el.className || '').toLowerCase()
+      return t === '+' || t === '＋' || c.includes('btn-plus') || c.includes('quantity-up')
+    })
+    const hasQtySelect = !!document.querySelector('select[name*="qty"], select[name*="count"], select.ticket-count')
+    const hasTicketRow  = !!document.querySelector('.ticket-row, .ticket-type-row')
+    return hasPlusBtn || hasQtySelect || hasTicketRow
+  }).catch(() => false)
+
+  if (!isOnTicketForm) {
+    log('偵測到活動描述頁，尋找「立即購票」按鈕...', 'info')
+    const regBtn = await page.$(SELECTORS.event.registerBtn).catch(() => null)
+      || await findButtonByText(page, ['立即購票', '立即報名', '購票', '報名', 'Register', 'Buy Tickets'])
+    if (regBtn) {
+      await jsClick(regBtn)
+      log('已點擊「立即購票」，等待進入票種選擇頁...', 'info')
+      await page.waitForNavigation({ timeout: 20000 }).catch(() => {})
+      await new Promise(r => setTimeout(r, 1000))
+    } else {
+      log('⚠️ 找不到「立即購票」按鈕，嘗試在當前頁面繼續', 'warn')
+    }
+  }
+
   // ── 步驟 1：找目標票種 row ────────────────────────────────
   const rows = await page.$$(SELECTORS.event.ticketRows)
   let targetRow = null
@@ -507,47 +533,38 @@ async function selectTicket(page, ticketType, quantity, log, customAnswer) {
   log('已進入報名頁面', 'info')
 }
 
-// 填寫報名表單
+// 填寫報名表單（支援多張票各填一份）
 async function fillForm(page, formData, log) {
   log('填寫報名表單...', 'info')
 
-  if (formData.name) {
-    const nameEl = await page.$(SELECTORS.form.nameField)
-    if (nameEl) {
-      await safeType(page, SELECTORS.form.nameField, formData.name)
-      log(`填入姓名：${formData.name}`, 'info')
+  // 通用：找所有符合 selector 的空白欄位，全部填入同一個值
+  const fillAll = async (selector, value, fieldName) => {
+    if (!value) return
+    const els = await page.$$(selector)
+    let count = 0
+    for (const el of els) {
+      const isVisible = await el.evaluate(e => !!(e.offsetParent))
+      if (!isVisible) continue
+      const existing = await el.evaluate(e => e.value.trim())
+      if (existing) continue  // 已有值跳過
+      await el.evaluate(e => e.scrollIntoView({ block: 'center' }))
+      await el.click({ clickCount: 3 })
+      await el.type(String(value), { delay: 50 })
+      count++
     }
+    if (count > 0) log(`填入${fieldName}（${count} 個欄位）`, 'info')
   }
 
-  if (formData.phone) {
-    const phoneEl = await page.$(SELECTORS.form.phoneField)
-    if (phoneEl) {
-      await safeType(page, SELECTORS.form.phoneField, formData.phone)
-      log(`填入手機：${formData.phone}`, 'info')
-    }
-  }
+  await fillAll(SELECTORS.form.nameField,  formData.name,     '姓名')
+  await fillAll(SELECTORS.form.phoneField, formData.phone,    '手機')
+  await fillAll(SELECTORS.form.idField,    formData.idNumber, '身分證')
+  await fillAll(SELECTORS.form.emailField, formData.email,    'Email')
 
-  if (formData.idNumber) {
-    const idEl = await page.$(SELECTORS.form.idField)
-    if (idEl) {
-      await safeType(page, SELECTORS.form.idField, formData.idNumber)
-      log('填入身分證字號', 'info')
-    }
-  }
-
-  if (formData.email) {
-    const emailEls = await page.$$(SELECTORS.form.emailField)
-    for (const el of emailEls) {
-      const val = await el.evaluate(e => e.value)
-      if (!val) await el.type(formData.email, { delay: 50 })
-    }
-  }
-
-  // 勾選同意條款
-  const agree = await page.$(SELECTORS.form.agreeCheckbox)
-  if (agree) {
-    const checked = await agree.evaluate(el => el.checked)
-    if (!checked) await agree.click()
+  // 勾選所有同意條款 checkbox
+  const agreeBoxes = await page.$$(SELECTORS.form.agreeCheckbox)
+  for (const cb of agreeBoxes) {
+    const checked = await cb.evaluate(el => el.checked)
+    if (!checked) await cb.click()
   }
 
   log('表單填寫完成，提交中...', 'info')
@@ -578,44 +595,160 @@ async function fillForm(page, formData, log) {
   await page.waitForNavigation({ timeout: 20000 }).catch(() => {})
 }
 
-// 付款
+// 付款（支援信用卡 TapPay / ATM / 超商）
 async function fillPayment(page, paymentData, log) {
   log('進入付款頁面...', 'info')
+  await new Promise(r => setTimeout(r, 1500))
 
-  // 選信用卡
-  const ccOption = await page.$(SELECTORS.payment.creditCardOption)
-  if (ccOption) {
-    await ccOption.click()
-    await page.waitForTimeout(500)
+  const method = paymentData.method || 'credit_card'
+
+  // ── 步驟 1：選擇付款方式 ────────────────────────────────
+  const methodKeywords = {
+    credit_card: ['信用卡', 'Credit Card', 'credit_card', 'credit'],
+    atm:         ['ATM', '轉帳', 'vacc', 'atm'],
+    cvs:         ['超商', '便利商店', 'CVS', 'barcode', 'cvs'],
+  }
+  const keywords = methodKeywords[method] || []
+
+  let methodSelected = false
+  for (const kw of keywords) {
+    const radio = await page.$(`input[value="${kw}"]`).catch(() => null)
+    if (radio) {
+      await radio.click()
+      log(`選擇付款方式：${kw}`, 'info')
+      methodSelected = true
+      await new Promise(r => setTimeout(r, 800))
+      break
+    }
+  }
+  if (!methodSelected) {
+    const btn = await findButtonByText(page, keywords)
+    if (btn) {
+      await jsClick(btn)
+      log(`選擇付款方式（按鈕）：${keywords[0]}`, 'info')
+      await new Promise(r => setTimeout(r, 800))
+    }
   }
 
-  // 信用卡資料可能在 iframe（如 Tappay）
-  const frames = page.frames()
-  let targetFrame = page
-
-  for (const frame of frames) {
-    const cardInput = await frame.$(SELECTORS.payment.cardNumber).catch(() => null)
-    if (cardInput) { targetFrame = frame; break }
+  // ── 步驟 2：ATM / 超商 — 直接送出，系統顯示付款帳號 ───
+  if (method !== 'credit_card') {
+    log(`${method === 'atm' ? 'ATM 轉帳' : '超商'}付款：送出後系統將顯示付款資訊`, 'info')
+    const confirmBtn = await findButtonByText(page, ['確認', '送出', '完成', 'Confirm', 'Submit'])
+      || await page.$('input[type="submit"]').catch(() => null)
+    if (confirmBtn) {
+      await jsClick(confirmBtn)
+      await page.waitForNavigation({ timeout: 20000 }).catch(() => {})
+    }
+    return
   }
 
-  if (paymentData.cardNumber) {
-    await safeType(targetFrame, SELECTORS.payment.cardNumber, paymentData.cardNumber.replace(/\s/g, ''))
-    log('填入信用卡號', 'info')
+  // ── 步驟 3：信用卡 — TapPay iframe 填入 ────────────────
+  log('等待 TapPay 信用卡表單載入...', 'info')
+  await new Promise(r => setTimeout(r, 3000))
+
+  const tapPayFrames = page.frames().filter(f => {
+    const u = f.url()
+    return u.includes('tappay') || u.includes('tappaysdk')
+  })
+
+  const fillFrame = async (frame, value, fieldName) => {
+    const input = await frame.$('input').catch(() => null)
+    if (!input) return false
+    await input.evaluate(el => { el.focus(); el.select() })
+    await input.type(String(value), { delay: 80 })
+    await input.evaluate(el => {
+      el.dispatchEvent(new InputEvent('input', { bubbles: true, data: el.value }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    log(`填入${fieldName}（TapPay）`, 'info')
+    return true
   }
 
-  if (paymentData.expiry) {
-    await safeType(targetFrame, SELECTORS.payment.expiry, paymentData.expiry)
-    log('填入有效期', 'info')
+  if (tapPayFrames.length >= 1) {
+    // TapPay 固定順序：[0] 卡號、[1] 到期日、[2] CVV
+    if (paymentData.cardNumber)
+      await fillFrame(tapPayFrames[0], paymentData.cardNumber.replace(/\s/g, ''), '卡號')
+    await new Promise(r => setTimeout(r, 300))
+    if (tapPayFrames[1] && paymentData.expiry)
+      await fillFrame(tapPayFrames[1], paymentData.expiry.replace('/', ''), '到期日')
+    await new Promise(r => setTimeout(r, 300))
+    if (tapPayFrames[2] && paymentData.cvv)
+      await fillFrame(tapPayFrames[2], paymentData.cvv, 'CVV')
+  } else {
+    // TapPay 未出現，fallback 到一般 iframe 或直接填入
+    log('⚠️ 未偵測到 TapPay，嘗試一般信用卡欄位...', 'warn')
+    let filled = false
+    for (const frame of page.frames()) {
+      const cardInput = await frame.$(SELECTORS.payment.cardNumber).catch(() => null)
+      if (!cardInput) continue
+      if (paymentData.cardNumber)
+        await cardInput.type(paymentData.cardNumber.replace(/\s/g, ''), { delay: 60 })
+      const expInput = await frame.$(SELECTORS.payment.expiry).catch(() => null)
+      if (expInput && paymentData.expiry) await expInput.type(paymentData.expiry, { delay: 60 })
+      const cvvInput = await frame.$(SELECTORS.payment.cvv).catch(() => null)
+      if (cvvInput && paymentData.cvv) await cvvInput.type(paymentData.cvv, { delay: 60 })
+      filled = true
+      break
+    }
+    if (!filled) {
+      log('⚠️ 找不到信用卡輸入欄位，請手動填入後繼續', 'warn')
+      return
+    }
   }
 
-  if (paymentData.cvv) {
-    await safeType(targetFrame, SELECTORS.payment.cvv, paymentData.cvv)
-    log('填入 CVV', 'info')
-  }
-
+  // ── 步驟 4：確認付款 ────────────────────────────────────
   log('確認付款...', 'info')
-  await safeClick(page, SELECTORS.payment.confirmBtn)
-  await page.waitForNavigation({ timeout: 30000 }).catch(() => {})
+  await new Promise(r => setTimeout(r, 500))
+  const payBtn = await findButtonByText(page, ['確認付款', '付款', '送出', 'Pay', 'Confirm'])
+    || await page.$(SELECTORS.payment.confirmBtn).catch(() => null)
+  if (payBtn) {
+    await jsClick(payBtn)
+    await page.waitForNavigation({ timeout: 30000 }).catch(() => {})
+  } else {
+    log('⚠️ 找不到付款按鈕，請手動確認', 'warn')
+  }
+}
+
+// 偵測並點擊訂單確認頁的「確認送出」按鈕
+async function confirmOrder(page, log) {
+  log('檢查訂單確認頁...', 'info')
+  await new Promise(r => setTimeout(r, 1500))
+
+  // 確認頁特徵：URL 含 /registrations/ 且不含 /new，或頁面有訂單摘要元素
+  const isConfirmPage = await page.evaluate(() => {
+    const url = location.href
+    const hasOrderSummary = !!(
+      document.querySelector('.order-summary, .registration-summary, .ticket-summary, [class*="summary"]') ||
+      document.querySelector('[class*="confirm"], [class*="review"], [class*="order-detail"]')
+    )
+    const urlIsConfirm = url.includes('/registrations/') && !url.includes('/new') && !url.includes('payment')
+    return hasOrderSummary || urlIsConfirm
+  }).catch(() => false)
+
+  if (!isConfirmPage) {
+    log('未偵測到確認頁，跳過此步驟', 'info')
+    return
+  }
+
+  const confirmBtn = await findButtonByText(page, [
+    '確認送出', '送出訂單', '確認訂單', '確認報名', '送出報名',
+    '確認', '送出', 'Confirm', 'Submit Order', 'Submit',
+  ])
+
+  if (confirmBtn) {
+    const txt = await confirmBtn.evaluate(el => (el.innerText || el.value || '').trim())
+    await jsClick(confirmBtn)
+    log(`點擊「${txt}」確認訂單`, 'info')
+    await page.waitForNavigation({ timeout: 20000 }).catch(() => {})
+  } else {
+    log('確認頁未找到確認按鈕，嘗試找 input[type="submit"]', 'warn')
+    const submitInput = await page.$('input[type="submit"]').catch(() => null)
+    if (submitInput) {
+      await submitInput.evaluate(el => { el.scrollIntoView({ block: 'center' }); el.click() })
+      log('點擊送出按鈕（input submit）', 'info')
+      await page.waitForNavigation({ timeout: 20000 }).catch(() => {})
+    }
+  }
 }
 
 // 偵測驗證碼（含 Cloudflare Turnstile）
@@ -641,6 +774,7 @@ module.exports = {
   checkTicketStatus,
   selectTicket,
   fillForm,
+  confirmOrder,
   fillPayment,
   hasCaptcha,
   isOrderSuccess,

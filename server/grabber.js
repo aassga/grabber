@@ -249,8 +249,25 @@ class Grabber {
       if (!this.running) return
     }
 
+    await kktix.confirmOrder(this.page, this.log.bind(this))
+
+    if (await kktix.hasCaptcha(this.page)) {
+      await this._handleCaptcha()
+      if (!this.running) return
+    }
+
     if (paymentData && paymentData.cardNumber) {
       await kktix.fillPayment(this.page, paymentData, this.log.bind(this))
+
+      // 3D Secure 偵測：銀行驗證頁需使用者手動輸入簡訊驗證碼
+      await this._sleep(2000)
+      const is3DS = await this._detect3DSecure()
+      if (is3DS) {
+        this.log('💳 偵測到 3D Secure 驗證，請在瀏覽器中完成銀行簡訊驗證，完成後點擊「我已完成驗證」', 'warn')
+        this.onStatus('⚠️ 等待 3D Secure 銀行驗證...')
+        await this._handleCaptcha()
+        if (!this.running) return
+      }
     }
 
     await this._sleep(2000)
@@ -311,6 +328,20 @@ class Grabber {
     if (accounts.length === 0) return null
     const primary = accounts.find(a => a.role === 'primary')
     return primary || accounts[this.accountIndex % accounts.length]
+  }
+
+  async _detect3DSecure() {
+    return this.page.evaluate(() => {
+      const url = location.href
+      const title = document.title.toLowerCase()
+      const body = (document.body?.innerText || '').toLowerCase()
+      return (
+        url.includes('3ds') || url.includes('acs') ||
+        title.includes('3d secure') || title.includes('驗證') ||
+        body.includes('簡訊驗證碼') || body.includes('一次性密碼') || body.includes('otp') ||
+        !!document.querySelector('iframe[src*="3ds"], iframe[src*="acs"], iframe[src*="secure3d"]')
+      )
+    }).catch(() => false)
   }
 
   _statusText(status) {

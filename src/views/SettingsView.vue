@@ -238,7 +238,31 @@
       <div class="security-notice">
         🔒 資料僅存於本機記憶體，不會上傳或儲存至任何伺服器
       </div>
-      <div class="form-grid">
+
+      <!-- 付款方式選擇 -->
+      <div class="form-group form-full" style="margin-bottom: 20px;">
+        <label class="form-label">付款方式</label>
+        <div class="payment-method-group">
+          <label
+            v-for="m in paymentMethods"
+            :key="m.value"
+            class="payment-method-btn"
+            :class="{ active: paymentData.method === m.value }"
+          >
+            <input
+              type="radio"
+              :value="m.value"
+              v-model="paymentData.method"
+              style="display:none"
+            />
+            <span class="pm-icon">{{ m.icon }}</span>
+            <span class="pm-label">{{ m.label }}</span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 信用卡欄位（僅信用卡方式顯示） -->
+      <div v-if="paymentData.method === 'credit_card'" class="form-grid">
         <div class="form-group form-full">
           <label class="form-label">持卡人姓名</label>
           <input v-model="paymentData.cardHolder" class="form-input" placeholder="WANG XIAO MING" />
@@ -274,6 +298,16 @@
           />
         </div>
       </div>
+
+      <!-- ATM / 超商提示 -->
+      <div v-else class="payment-alt-notice">
+        <template v-if="paymentData.method === 'atm'">
+          💡 選擇 ATM 付款後，系統將自動送出訂單，KKTIX 頁面會顯示轉帳帳號，請在期限內完成付款。
+        </template>
+        <template v-else>
+          💡 選擇超商付款後，系統將自動送出訂單，KKTIX 頁面會顯示條碼或代碼，請至超商完成付款。
+        </template>
+      </div>
     </div>
 
     <!-- 操作按鈕 -->
@@ -308,6 +342,11 @@ export default {
       ticketOptions: [],
       ticketsLoading: false,
       backendUrl: localStorage.getItem('backend-url') || '',
+      paymentMethods: [
+        { value: 'credit_card', icon: '💳', label: '信用卡' },
+        { value: 'atm',         icon: '🏦', label: 'ATM 轉帳' },
+        { value: 'cvs',         icon: '🏪', label: '超商付款' },
+      ],
     }
   },
   computed: {
@@ -430,7 +469,7 @@ export default {
         scheduledStart: false, scheduledTime: '',
       })
       Object.assign(grabberStore.formData, { name: '', phone: '', idNumber: '', email: '', customAnswer: '' })
-      Object.assign(grabberStore.paymentData, { cardNumber: '', expiry: '', cvv: '', cardHolder: '' })
+      Object.assign(grabberStore.paymentData, { method: 'credit_card', cardNumber: '', expiry: '', cvv: '', cardHolder: '' })
     },
     formatCard(e) {
       let v = e.target.value.replace(/\D/g, '').substring(0, 16)
@@ -621,4 +660,49 @@ export default {
   transition: transform 0.3s;
 }
 .refresh-btn:hover { transform: rotate(180deg); }
+
+/* 付款方式選擇 */
+.payment-method-group {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.payment-method-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  background: #0f1117;
+  border: 1px solid #2d3561;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  user-select: none;
+  flex: 1;
+  min-width: 110px;
+  justify-content: center;
+}
+.payment-method-btn:hover { border-color: #7c6aff; }
+.payment-method-btn.active {
+  border-color: #7c6aff;
+  background: rgba(124, 106, 255, 0.12);
+}
+
+.pm-icon { font-size: 18px; }
+.pm-label { font-size: 13px; font-weight: 600; color: #e2e8f0; }
+
+.payment-alt-notice {
+  font-size: 13px;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.06);
+  border: 1px solid #2d3561;
+  border-radius: 8px;
+  padding: 14px 16px;
+  line-height: 1.6;
+}
+
+@media (max-width: 480px) {
+  .payment-method-btn { min-width: 80px; padding: 10px 12px; }
+}
 </style>

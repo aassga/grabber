@@ -50,6 +50,7 @@ export const grabberStore = reactive({
 
   // 不持久化：信用卡資料只存記憶體（安全考量）
   paymentData: {
+    method: 'credit_card',
     cardNumber: '',
     expiry: '',
     cvv: '',
